@@ -93,7 +93,10 @@ def to_wide_csv(mapping_df: pd.DataFrame, output: Path) -> None:
         labels = row.get("labels", [])
         if isinstance(labels, str):
             labels = [labels]
-        entry: dict = {"response_id": row["response_id"], "response": row.get("response", "")}
+        entry: dict = {
+            "response_id": row["response_id"],
+            "response": row.get("response", ""),
+        }
         for i, label in enumerate(labels, 1):
             entry[f"code_{i}"] = label
         rows.append(entry)
@@ -128,27 +131,49 @@ def read_coded_csv(path: Path) -> pd.DataFrame:
 @app.command()
 def discover(
     input_csv: Path = typer.Argument(..., help="Path to responses CSV"),
-    column: Optional[str] = typer.Option(None, "--column", "-c", help="Response text column name"),
-    question: str = typer.Option(..., "--question", "-q", help="The survey/consultation question"),
-    output: Path = typer.Option("themes.csv", "--output", "-o", help="Output themes CSV path"),
+    column: Optional[str] = typer.Option(
+        None, "--column", "-c", help="Response text column name"
+    ),
+    question: str = typer.Option(
+        ..., "--question", "-q", help="The survey/consultation question"
+    ),
+    output: Path = typer.Option(
+        "themes.csv", "--output", "-o", help="Output themes CSV path"
+    ),
     model: str = typer.Option(
-        "anthropic.claude-3-5-sonnet-20241022-v2:0", "--model", help="Bedrock model ID"
+        "anthropic.claude-3-7-sonnet-20250219-v1:0", "--model", help="Bedrock model ID"
     ),
     region: str = typer.Option("eu-west-2", "--region", help="AWS region"),
     profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile name"),
-    concurrency: int = typer.Option(10, "--concurrency", help="Max concurrent LLM calls"),
-    id_col: str = typer.Option("response_id", "--id-col", help="Column name for response IDs"),
-    text_col: str = typer.Option("response", "--text-col", help="Column name for response text"),
-    cluster: bool = typer.Option(False, "--cluster/--no-cluster", help="Use hierarchical clustering after condensation"),
-    target_themes: int = typer.Option(10, "--target-themes", help="Target number of themes for clustering"),
-    significance_pct: float = typer.Option(10.0, "--significance-pct", help="Significance threshold for clustering (%)"),
+    concurrency: int = typer.Option(
+        10, "--concurrency", help="Max concurrent LLM calls"
+    ),
+    id_col: str = typer.Option(
+        "response_id", "--id-col", help="Column name for response IDs"
+    ),
+    text_col: str = typer.Option(
+        "response", "--text-col", help="Column name for response text"
+    ),
+    cluster: bool = typer.Option(
+        False,
+        "--cluster/--no-cluster",
+        help="Use hierarchical clustering after condensation",
+    ),
+    target_themes: int = typer.Option(
+        10, "--target-themes", help="Target number of themes for clustering"
+    ),
+    significance_pct: float = typer.Option(
+        10.0, "--significance-pct", help="Significance threshold for clustering (%)"
+    ),
 ):
     """Discover themes from survey responses (sentiment -> generation -> condensation -> refinement)."""
     df = load_responses(input_csv, column=column, id_col=id_col, text_col=text_col)
     llm = make_llm(model, region, profile)
 
     async def _run():
-        console.print(f"[bold]Running sentiment analysis on {len(df)} responses...[/bold]")
+        console.print(
+            f"[bold]Running sentiment analysis on {len(df)} responses...[/bold]"
+        )
         sentiment_df, _ = await sentiment_analysis(
             df, llm, question=question, concurrency=concurrency
         )
@@ -172,7 +197,9 @@ def discover(
                 target_themes=target_themes,
                 significance_percentage=significance_pct,
             )
-            refine_input = clustered_df[["topic_label", "topic_description", "source_topic_count"]]
+            refine_input = clustered_df[
+                ["topic_label", "topic_description", "source_topic_count"]
+            ]
         else:
             refine_input = condensed_df
 
@@ -192,18 +219,32 @@ def discover(
 def classify(
     input_csv: Path = typer.Argument(..., help="Path to responses CSV"),
     themes: Path = typer.Option(..., "--themes", "-t", help="Path to themes CSV"),
-    column: Optional[str] = typer.Option(None, "--column", "-c", help="Response text column name"),
-    question: str = typer.Option(..., "--question", "-q", help="The survey/consultation question"),
-    output: Path = typer.Option("coded.csv", "--output", "-o", help="Output coded CSV path"),
-    detail: bool = typer.Option(False, "--detail/--no-detail", help="Run detail detection"),
+    column: Optional[str] = typer.Option(
+        None, "--column", "-c", help="Response text column name"
+    ),
+    question: str = typer.Option(
+        ..., "--question", "-q", help="The survey/consultation question"
+    ),
+    output: Path = typer.Option(
+        "coded.csv", "--output", "-o", help="Output coded CSV path"
+    ),
+    detail: bool = typer.Option(
+        False, "--detail/--no-detail", help="Run detail detection"
+    ),
     model: str = typer.Option(
-        "anthropic.claude-3-5-sonnet-20241022-v2:0", "--model", help="Bedrock model ID"
+        "anthropic.claude-3-7-sonnet-20250219-v1:0", "--model", help="Bedrock model ID"
     ),
     region: str = typer.Option("eu-west-2", "--region", help="AWS region"),
     profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile name"),
-    concurrency: int = typer.Option(10, "--concurrency", help="Max concurrent LLM calls"),
-    id_col: str = typer.Option("response_id", "--id-col", help="Column name for response IDs"),
-    text_col: str = typer.Option("response", "--text-col", help="Column name for response text"),
+    concurrency: int = typer.Option(
+        10, "--concurrency", help="Max concurrent LLM calls"
+    ),
+    id_col: str = typer.Option(
+        "response_id", "--id-col", help="Column name for response IDs"
+    ),
+    text_col: str = typer.Option(
+        "response", "--text-col", help="Column name for response text"
+    ),
 ):
     """Classify responses against a theme set (theme mapping + optional detail detection)."""
     df = load_responses(input_csv, column=column, id_col=id_col, text_col=text_col)
@@ -211,7 +252,9 @@ def classify(
     llm = make_llm(model, region, profile)
 
     async def _run():
-        console.print(f"[bold]Mapping {len(df)} responses to {len(themes_df)} themes...[/bold]")
+        console.print(
+            f"[bold]Mapping {len(df)} responses to {len(themes_df)} themes...[/bold]"
+        )
         mapping_df, _ = await theme_mapping(
             df[["response_id", "response"]],
             llm,
@@ -229,7 +272,9 @@ def classify(
                 concurrency=concurrency,
             )
             mapping_df = mapping_df.merge(
-                detail_df[["response_id", "evidence_rich"]], on="response_id", how="left"
+                detail_df[["response_id", "evidence_rich"]],
+                on="response_id",
+                how="left",
             )
 
         return mapping_df
@@ -242,8 +287,12 @@ def classify(
 @app.command()
 def evaluate(
     predicted_csv: Path = typer.Argument(..., help="Path to predicted (coded) CSV"),
-    reference_csv: Path = typer.Argument(..., help="Path to reference (ground truth) CSV"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Optional JSON output path"),
+    reference_csv: Path = typer.Argument(
+        ..., help="Path to reference (ground truth) CSV"
+    ),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Optional JSON output path"
+    ),
 ):
     """Evaluate coded responses against a reference set (F1, precision, recall, exact match, overlap)."""
     pred = read_coded_csv(predicted_csv)
@@ -251,7 +300,9 @@ def evaluate(
 
     merged = pred.merge(ref, on="response_id", suffixes=("_pred", "_ref"))
     if merged.empty:
-        console.print("[red]No matching response_ids found between predicted and reference.[/red]")
+        console.print(
+            "[red]No matching response_ids found between predicted and reference.[/red]"
+        )
         raise typer.Exit(1)
 
     pred_labels = merged["labels_pred"].tolist()
@@ -271,7 +322,9 @@ def evaluate(
     precision = precision_score(y_ref, y_pred, average="samples", zero_division=0)
     recall = recall_score(y_ref, y_pred, average="samples", zero_division=0)
 
-    exact_match = sum(1 for p, r in zip(pred_labels, ref_labels) if p == r) / len(merged)
+    exact_match = sum(1 for p, r in zip(pred_labels, ref_labels) if p == r) / len(
+        merged
+    )
     overlap = sum(1 for p, r in zip(pred_labels, ref_labels) if p & r) / len(merged)
 
     metrics = {
@@ -294,3 +347,7 @@ def evaluate(
     if output:
         output.write_text(json.dumps(metrics, indent=2))
         console.print(f"[green]Wrote metrics to {output}[/green]")
+
+
+if __name__ == "__main__":
+    app()
