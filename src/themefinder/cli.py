@@ -19,6 +19,7 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from themefinder import (
     detail_detection,
     sentiment_analysis,
+    theme_clustering,
     theme_condensation,
     theme_generation,
     theme_mapping,
@@ -138,6 +139,9 @@ def discover(
     concurrency: int = typer.Option(10, "--concurrency", help="Max concurrent LLM calls"),
     id_col: str = typer.Option("response_id", "--id-col", help="Column name for response IDs"),
     text_col: str = typer.Option("response", "--text-col", help="Column name for response text"),
+    cluster: bool = typer.Option(False, "--cluster/--no-cluster", help="Use hierarchical clustering after condensation"),
+    target_themes: int = typer.Option(10, "--target-themes", help="Target number of themes for clustering"),
+    significance_pct: float = typer.Option(10.0, "--significance-pct", help="Significance threshold for clustering (%)"),
 ):
     """Discover themes from survey responses (sentiment -> generation -> condensation -> refinement)."""
     df = load_responses(input_csv, column=column, id_col=id_col, text_col=text_col)
@@ -159,9 +163,22 @@ def discover(
             theme_df, llm, question=question, concurrency=concurrency
         )
 
+        if cluster:
+            console.print(f"[bold]Clustering to ~{target_themes} themes...[/bold]")
+            condensed_df["topic_id"] = [str(i) for i in range(1, len(condensed_df) + 1)]
+            clustered_df, _ = theme_clustering(
+                condensed_df,
+                llm,
+                target_themes=target_themes,
+                significance_percentage=significance_pct,
+            )
+            refine_input = clustered_df[["topic_label", "topic_description", "source_topic_count"]]
+        else:
+            refine_input = condensed_df
+
         console.print("[bold]Refining themes...[/bold]")
         refined_df, _ = await theme_refinement(
-            condensed_df, llm, question=question, concurrency=concurrency
+            refine_input, llm, question=question, concurrency=concurrency
         )
 
         return refined_df
