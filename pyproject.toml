@@ -19,7 +19,7 @@ classifiers = [
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
 langchain = "*"
-langchain-openai = "*"
+tiktoken = "*"
 pandas = "^2.2.2"
 python-dotenv = "^1.0.1"
 langfuse = "2.29.1"
@@ -28,6 +28,11 @@ scikit-learn = "*"
 openpyxl = "^3.1.5"
 pyarrow = "^15.0.0" 
 toml = "^0.10.2"
+langchain-aws = "*"
+typer = {extras = ["all"], version = "*"}
+
+[tool.poetry.scripts]
+themefinder = "themefinder.cli:app"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"
