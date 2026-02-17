@@ -4,7 +4,6 @@ import os
 from dataclasses import dataclass
 from typing import Any, Optional
 
-import openai
 import pandas as pd
 import tiktoken
 from pydantic import BaseModel, ValidationError
@@ -255,7 +254,7 @@ async def call_llm(
                     if isinstance(all_results, dict)
                     else all_results.responses
                 )
-            except (openai.BadRequestError, ValueError) as e:
+            except ValueError as e:
                 logger.warning(e)
                 return [], batch_prompt.response_ids
             except ValidationError as e:
