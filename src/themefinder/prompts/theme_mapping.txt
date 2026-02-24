@@ -22,6 +22,7 @@ If none of the themes are relevant to the response then use the most appropriate
 You MUST return an entry with the correct response ID for each input object.
 You must only return the alphabetic topic_ids in the labels section.
 
+{examples}
 
 QUESTION:
 

@@ -25,6 +25,11 @@ from themefinder import (
     theme_mapping,
     theme_refinement,
 )
+from themefinder.examples import (
+    format_discovery_examples,
+    format_mapping_examples,
+    load_examples_csv,
+)
 
 app = typer.Typer(help="themefinder CLI — discover, classify, and evaluate themes.")
 console = Console()
@@ -165,10 +170,19 @@ def discover(
     significance_pct: float = typer.Option(
         10.0, "--significance-pct", help="Significance threshold for clustering (%)"
     ),
+    examples: Optional[Path] = typer.Option(
+        None,
+        "--examples",
+        "-e",
+        help="Path to discovery examples CSV (columns: responses, topics)",
+    ),
 ):
     """Discover themes from survey responses (sentiment -> generation -> condensation -> refinement)."""
     df = load_responses(input_csv, column=column, id_col=id_col, text_col=text_col)
     llm = make_llm(model, region, profile)
+    examples_str = (
+        format_discovery_examples(load_examples_csv(examples)) if examples else ""
+    )
 
     async def _run():
         console.print(
@@ -180,7 +194,8 @@ def discover(
 
         console.print("[bold]Generating themes...[/bold]")
         theme_df, _ = await theme_generation(
-            sentiment_df, llm, question=question, concurrency=concurrency
+            sentiment_df, llm, question=question, concurrency=concurrency,
+            examples=examples_str,
         )
 
         console.print("[bold]Condensing themes...[/bold]")
@@ -245,11 +260,20 @@ def classify(
     text_col: str = typer.Option(
         "response", "--text-col", help="Column name for response text"
     ),
+    examples: Optional[Path] = typer.Option(
+        None,
+        "--examples",
+        "-e",
+        help="Path to mapping examples CSV (columns: response, code_*, explanation)",
+    ),
 ):
     """Classify responses against a theme set (theme mapping + optional detail detection)."""
     df = load_responses(input_csv, column=column, id_col=id_col, text_col=text_col)
     themes_df = load_themes(themes)
     llm = make_llm(model, region, profile)
+    examples_str = (
+        format_mapping_examples(load_examples_csv(examples)) if examples else ""
+    )
 
     async def _run():
         console.print(
@@ -261,6 +285,7 @@ def classify(
             question=question,
             refined_themes_df=themes_df,
             concurrency=concurrency,
+            examples=examples_str,
         )
 
         if detail:
