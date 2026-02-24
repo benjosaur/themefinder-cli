@@ -31,6 +31,7 @@ async def find_themes(
     system_prompt: str = CONSULTATION_SYSTEM_PROMPT,
     verbose: bool = True,
     concurrency: int = 10,
+    discovery_examples: str = "",
 ) -> dict[str, str | pd.DataFrame]:
     """Process survey responses through a multi-stage theme analysis pipeline.
 
@@ -65,6 +66,7 @@ async def find_themes(
         question=question,
         system_prompt=system_prompt,
         concurrency=concurrency,
+        examples=discovery_examples,
     )
     condensed_theme_df, _ = await theme_condensation(
         theme_df,
@@ -117,6 +119,7 @@ async def theme_generation(
     prompt_template: str = THEME_GENERATION,
     system_prompt: str = CONSULTATION_SYSTEM_PROMPT,
     concurrency: int = 10,
+    examples: str = "",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Generate themes from survey responses using an LLM.
 
@@ -144,6 +147,7 @@ async def theme_generation(
         question=question,
         system_prompt=system_prompt,
         concurrency=concurrency,
+        examples=examples,
     )
 
 
@@ -364,6 +368,7 @@ async def theme_mapping(
     prompt_template: str = THEME_MAPPING,
     system_prompt: str = CONSULTATION_SYSTEM_PROMPT,
     concurrency: int = 10,
+    examples: str = "",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Map survey responses to refined themes using an LLM.
 
@@ -404,6 +409,7 @@ async def theme_mapping(
         integrity_check=True,
         system_prompt=system_prompt,
         concurrency=concurrency,
+        examples=examples,
     )
 
 
