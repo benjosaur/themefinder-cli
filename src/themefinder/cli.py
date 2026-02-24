@@ -25,11 +25,7 @@ from themefinder import (
     theme_mapping,
     theme_refinement,
 )
-from themefinder.examples import (
-    format_discovery_examples,
-    format_mapping_examples,
-    load_examples_csv,
-)
+from themefinder.examples import format_discovery_examples, format_mapping_examples
 
 app = typer.Typer(help="themefinder CLI — discover, classify, and evaluate themes.")
 console = Console()
@@ -53,14 +49,21 @@ def make_llm(
     return llm.with_fallbacks([])  # tasks.py type-hints RunnableWithFallbacks
 
 
+def read_tabular(path: Path) -> pd.DataFrame:
+    """Read a CSV or Excel file into a DataFrame."""
+    if path.suffix in (".xlsx", ".xls"):
+        return pd.read_excel(path)
+    return pd.read_csv(path)
+
+
 def load_responses(
     path: Path,
     column: str | None = None,
     id_col: str = "response_id",
     text_col: str = "response",
 ) -> pd.DataFrame:
-    """Load a responses CSV and normalise column names to response_id / response."""
-    df = pd.read_csv(path)
+    """Load a responses CSV/XLSX and normalise column names to response_id / response."""
+    df = read_tabular(path)
     actual_text_col = column or text_col
     rename = {}
     if id_col != "response_id":
@@ -77,8 +80,8 @@ def load_responses(
 
 
 def load_themes(path: Path) -> pd.DataFrame:
-    """Load a themes CSV. Accepts both refined and condensed formats."""
-    df = pd.read_csv(path)
+    """Load a themes CSV/XLSX. Accepts both refined and condensed formats."""
+    df = read_tabular(path)
     if "topic" not in df.columns:
         if "topic_label" in df.columns and "topic_description" in df.columns:
             df["topic"] = df["topic_label"] + ": " + df["topic_description"]
@@ -110,8 +113,8 @@ def to_wide_csv(mapping_df: pd.DataFrame, output: Path) -> None:
 
 
 def read_coded_csv(path: Path) -> pd.DataFrame:
-    """Read a CSV with code_* columns. Returns DataFrame with response_id + labels set."""
-    df = pd.read_csv(path)
+    """Read a CSV/XLSX with code_* columns. Returns DataFrame with response_id + labels set."""
+    df = read_tabular(path)
     code_cols = sorted([c for c in df.columns if c.startswith("code_")])
     if not code_cols:
         raise typer.BadParameter(f"No code_* columns found in {path}")
@@ -174,14 +177,14 @@ def discover(
         None,
         "--examples",
         "-e",
-        help="Path to discovery examples CSV (columns: responses, topics)",
+        help="Path to discovery examples CSV/XLSX (columns: responses, topics)",
     ),
 ):
     """Discover themes from survey responses (sentiment -> generation -> condensation -> refinement)."""
     df = load_responses(input_csv, column=column, id_col=id_col, text_col=text_col)
     llm = make_llm(model, region, profile)
     examples_str = (
-        format_discovery_examples(load_examples_csv(examples)) if examples else ""
+        format_discovery_examples(read_tabular(examples)) if examples else ""
     )
 
     async def _run():
@@ -264,7 +267,7 @@ def classify(
         None,
         "--examples",
         "-e",
-        help="Path to mapping examples CSV (columns: response, code_*, explanation)",
+        help="Path to mapping examples CSV/XLSX (columns: response, code_*, explanation)",
     ),
 ):
     """Classify responses against a theme set (theme mapping + optional detail detection)."""
@@ -272,7 +275,7 @@ def classify(
     themes_df = load_themes(themes)
     llm = make_llm(model, region, profile)
     examples_str = (
-        format_mapping_examples(load_examples_csv(examples)) if examples else ""
+        format_mapping_examples(read_tabular(examples)) if examples else ""
     )
 
     async def _run():

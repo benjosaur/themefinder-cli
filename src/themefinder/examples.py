@@ -1,15 +1,8 @@
-"""Helpers for loading and formatting few-shot examples for LLM prompts."""
+"""Helpers for formatting few-shot examples for LLM prompts."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pandas as pd
-
-
-def load_examples_csv(path: Path) -> pd.DataFrame:
-    """Load an examples CSV file."""
-    return pd.read_csv(path)
 
 
 def format_mapping_examples(examples_df: pd.DataFrame | None) -> str:
