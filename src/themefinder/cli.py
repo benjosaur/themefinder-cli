@@ -13,6 +13,7 @@ import typer
 from langchain_aws import ChatBedrockConverse
 from rich.console import Console
 from rich.table import Table
+import numpy as np
 from sklearn.metrics import f1_score, precision_score, recall_score
 from sklearn.preprocessing import MultiLabelBinarizer
 
@@ -346,20 +347,40 @@ def evaluate(
     y_ref = mlb.transform(ref_labels)
 
     f1 = f1_score(y_ref, y_pred, average="samples", zero_division=0)
-    precision = precision_score(y_ref, y_pred, average="samples", zero_division=0)
-    recall = recall_score(y_ref, y_pred, average="samples", zero_division=0)
+    prec = precision_score(y_ref, y_pred, average="samples", zero_division=0)
+    rec = recall_score(y_ref, y_pred, average="samples", zero_division=0)
+
+    # Bootstrap confidence intervals (95%, 1000 resamples)
+    n_bootstrap = 1000
+    n_instances = y_ref.shape[0]
+    rng = np.random.default_rng(seed=42)
+    boot_f1, boot_prec, boot_rec = [], [], []
+    for _ in range(n_bootstrap):
+        idx = rng.choice(n_instances, size=n_instances, replace=True)
+        boot_f1.append(f1_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0))
+        boot_prec.append(precision_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0))
+        boot_rec.append(recall_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0))
+
+    def ci(samples):
+        lo, hi = np.percentile(samples, [2.5, 97.5])
+        return [round(float(lo), 4), round(float(hi), 4)]
 
     exact_match = sum(1 for p, r in zip(pred_labels, ref_labels) if p == r) / len(
         merged
     )
     overlap = sum(1 for p, r in zip(pred_labels, ref_labels) if p & r) / len(merged)
 
+    f1_ci, prec_ci, rec_ci = ci(boot_f1), ci(boot_prec), ci(boot_rec)
+
     metrics = {
         "n_responses": len(merged),
         "n_labels": len(all_labels),
         "f1": round(f1, 4),
-        "precision": round(precision, 4),
-        "recall": round(recall, 4),
+        "f1_ci": f1_ci,
+        "precision": round(prec, 4),
+        "precision_ci": prec_ci,
+        "recall": round(rec, 4),
+        "recall_ci": rec_ci,
         "exact_match": round(exact_match, 4),
         "overlap_rate": round(overlap, 4),
     }
@@ -368,7 +389,10 @@ def evaluate(
     table.add_column("Metric", style="bold")
     table.add_column("Value", justify="right")
     for k, v in metrics.items():
-        table.add_row(k, str(v))
+        if k.endswith("_ci"):
+            table.add_row(k, f"[{v[0]}, {v[1]}]")
+        else:
+            table.add_row(k, str(v))
     console.print(table)
 
     if output:
