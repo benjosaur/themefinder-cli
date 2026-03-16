@@ -1,5 +1,4 @@
 import pandas as pd
-import pytest
 
 from themefinder.examples import format_discovery_examples, format_mapping_examples
 
@@ -26,7 +25,6 @@ class TestFormatMappingExamples:
             }
         )
         result = format_mapping_examples(df)
-        assert result.startswith("## EXAMPLES")
         assert "Example 1:" in result
         assert "Example 2:" in result
         assert 'Response: "I think this will hurt small businesses"' in result
@@ -77,7 +75,6 @@ class TestFormatDiscoveryExamples:
             }
         )
         result = format_discovery_examples(df)
-        assert result.startswith("## EXAMPLES")
         assert "kinds of responses you might encounter" in result
         assert '- "I think this is a terrible idea"' in result
         assert "kinds of topics that should be extracted" in result

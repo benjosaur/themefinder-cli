@@ -20,11 +20,7 @@ def format_mapping_examples(examples_df: pd.DataFrame | None) -> str:
     if not code_cols:
         return ""
 
-    lines: list[str] = [
-        "## EXAMPLES",
-        "",
-        "Below are examples of how responses should be classified against the TOPIC LIST.",
-    ]
+    lines: list[str] = []
 
     for idx, (_, row) in enumerate(examples_df.iterrows(), 1):
         codes = [
@@ -77,10 +73,9 @@ def format_discovery_examples(examples_df: pd.DataFrame | None) -> str:
     if not responses and not topics:
         return ""
 
-    lines: list[str] = ["## EXAMPLES"]
+    lines: list[str] = []
 
     if responses:
-        lines.append("")
         lines.append("Here are examples of the kinds of responses you might encounter:")
         for r in responses:
             lines.append(f'- "{r}"')

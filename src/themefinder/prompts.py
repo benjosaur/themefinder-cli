@@ -142,6 +142,9 @@ EXAMPLE OUTPUT (showing the structure)
 QUESTION:
 {question}
 
+EXAMPLES:
+{examples}
+
 RESPONSES:
 {responses}"""
 
@@ -178,8 +181,10 @@ TOPIC LIST:
 
 {refined_themes}
 
-FREE_TEXT_RESPONSES:
+EXAMPLES:
+{examples}
 
+FREE_TEXT_RESPONSES:
 {responses}
 """
 
