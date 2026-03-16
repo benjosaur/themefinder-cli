@@ -18,6 +18,7 @@ from sklearn.metrics import f1_score, precision_score, recall_score
 from sklearn.preprocessing import MultiLabelBinarizer
 
 from themefinder import (
+    classify_single_response,
     detail_detection,
     sentiment_analysis,
     theme_clustering,
@@ -390,6 +391,275 @@ def evaluate(
     if output:
         output.write_text(json.dumps(metrics, indent=2))
         console.print(f"[green]Wrote metrics to {output}[/green]")
+
+
+# ---------------------------------------------------------------------------
+# Calibrate helpers
+# ---------------------------------------------------------------------------
+
+
+def _print_themes_table(themes_df: pd.DataFrame) -> None:
+    """Display themes in a Rich table."""
+    table = Table(title="Theme List")
+    table.add_column("ID", style="bold cyan")
+    table.add_column("Label", style="bold")
+    table.add_column("Description")
+    for _, row in themes_df.iterrows():
+        topic = str(row["topic"])
+        if ":" in topic:
+            label, desc = topic.split(":", 1)
+        else:
+            label, desc = topic, ""
+        table.add_row(str(row["topic_id"]), label.strip(), desc.strip())
+    console.print(table)
+
+
+def _prompt_human_codes(valid_codes: set[str]) -> list[str] | None:
+    """Read topic codes from stdin. Returns None on quit."""
+    while True:
+        raw = console.input("[bold]Your codes[/bold] (comma-separated, or [cyan]q[/cyan] to quit): ")
+        raw = raw.strip()
+        if raw.lower() == "q":
+            return None
+        if raw.lower() == "t":
+            return "SHOW_THEMES"  # type: ignore[return-value]
+        codes = [c.strip().upper() for c in raw.split(",") if c.strip()]
+        if not codes:
+            console.print("[red]Please enter at least one code.[/red]")
+            continue
+        invalid = [c for c in codes if c not in valid_codes]
+        if invalid:
+            console.print(f"[red]Invalid codes: {', '.join(invalid)}. Try again.[/red]")
+            continue
+        return codes
+
+
+def _display_comparison(
+    human_codes: list[str], llm_codes: list[str], themes_df: pd.DataFrame
+) -> None:
+    """Show human vs LLM codes side-by-side."""
+    topic_lookup = {}
+    for _, row in themes_df.iterrows():
+        topic = str(row["topic"])
+        label = topic.split(":", 1)[0].strip() if ":" in topic else topic
+        topic_lookup[str(row["topic_id"])] = label
+
+    table = Table(title="Comparison", show_header=True)
+    table.add_column("Human", style="green")
+    table.add_column("LLM", style="blue")
+
+    human_str = ", ".join(f"{c} ({topic_lookup.get(c, '?')})" for c in sorted(human_codes))
+    llm_str = ", ".join(f"{c} ({topic_lookup.get(c, '?')})" for c in sorted(llm_codes))
+    table.add_row(human_str, llm_str)
+    console.print(table)
+
+
+def _prompt_judgment() -> str:
+    """When codes differ, ask human to judge. Returns 'h', 'l', or 's'."""
+    while True:
+        choice = console.input(
+            "[bold]Who is right?[/bold] [green]\\[h][/green]uman / [blue]\\[l][/blue]lm / [yellow]\\[s][/yellow]kip: "
+        ).strip().lower()
+        if choice in ("h", "l", "s"):
+            return choice
+        console.print("[red]Please enter h, l, or s.[/red]")
+
+
+def _prompt_explanation() -> str:
+    """Get a brief explanation from the human."""
+    return console.input("[bold]Brief explanation[/bold] (why the LLM was wrong): ").strip()
+
+
+def _save_gold_examples(
+    gold_rows: list[dict], output_path: Path, existing_df: pd.DataFrame | None
+) -> None:
+    """Write accumulated gold standard examples to CSV, appending to existing."""
+    if not gold_rows:
+        return
+    new_df = pd.DataFrame(gold_rows)
+    if existing_df is not None and not existing_df.empty:
+        combined = pd.concat([existing_df, new_df], ignore_index=True)
+    else:
+        combined = new_df
+    combined.to_csv(output_path, index=False)
+
+
+# ---------------------------------------------------------------------------
+# Calibrate command
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def calibrate(
+    input_csv: Path = typer.Argument(..., help="Path to responses CSV"),
+    themes: Path = typer.Option(..., "--themes", "-t", help="Path to themes CSV"),
+    question: str = typer.Option(
+        ..., "--question", "-q", help="The survey/consultation question"
+    ),
+    output: Path = typer.Option(
+        "examples.csv", "--output", "-o", help="Gold standard examples CSV path"
+    ),
+    model: str = typer.Option(
+        "anthropic.claude-3-7-sonnet-20250219-v1:0", "--model", help="Bedrock model ID"
+    ),
+    region: str = typer.Option("eu-west-2", "--region", help="AWS region"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile name"),
+    streak_target: int = typer.Option(
+        5, "--streak", help="Consecutive correct LLM responses before stop is offered"
+    ),
+    id_col: str = typer.Option(
+        "response_id", "--id-col", help="Column name for response IDs"
+    ),
+    text_col: str = typer.Option(
+        "response", "--text-col", help="Column name for response text"
+    ),
+    shuffle: bool = typer.Option(
+        False, "--shuffle/--no-shuffle", help="Randomize response order"
+    ),
+):
+    """Interactively calibrate LLM mapping by comparing human and LLM labels row by row.
+
+    Builds a gold standard examples file of common LLM mistakes. Each row where
+    the human disagrees with the LLM (and the human is right) gets saved with an
+    explanation. Later LLM calls in the session use accumulated examples.
+
+    You must label at least STREAK consecutive correct LLM responses before you
+    can stop (default 5).
+    """
+    df = load_responses(input_csv, id_col=id_col, text_col=text_col)
+    themes_df = load_themes(themes)
+    llm = make_llm(model, region, profile)
+
+    # Load existing examples if output file exists
+    existing_df = None
+    if output.exists():
+        existing_df = read_tabular(output)
+        console.print(
+            f"[dim]Loaded {len(existing_df)} existing examples from {output}[/dim]"
+        )
+
+    # Build initial examples string from existing file
+    examples_df = existing_df.copy() if existing_df is not None else pd.DataFrame()
+
+    valid_codes = set(str(tid) for tid in themes_df["topic_id"])
+
+    if shuffle:
+        df = df.sample(frac=1).reset_index(drop=True)
+
+    # Display themes
+    _print_themes_table(themes_df)
+    console.print(f"\n[bold]{len(df)} responses to label. Enter [cyan]t[/cyan] to re-show themes, [cyan]q[/cyan] to quit.[/bold]\n")
+
+    gold_rows: list[dict] = []
+    consecutive_correct = 0
+    total_reviewed = 0
+    stopped_early = False
+
+    for idx, (_, row) in enumerate(df.iterrows()):
+        response_id = int(row["response_id"])
+        response_text = str(row["response"])
+
+        console.rule(f"[bold]Response {idx + 1}/{len(df)}[/bold] (streak: {consecutive_correct}/{streak_target})")
+        console.print(f"\n[italic]{response_text}[/italic]\n")
+
+        # Get human codes
+        while True:
+            human_codes = _prompt_human_codes(valid_codes)
+            if human_codes is None:
+                # Quit
+                stopped_early = True
+                break
+            if human_codes == "SHOW_THEMES":
+                _print_themes_table(themes_df)
+                continue
+            break
+
+        if stopped_early:
+            break
+
+        # Get LLM codes
+        examples_str = format_mapping_examples(examples_df if not examples_df.empty else None)
+        console.print("[dim]Asking LLM...[/dim]")
+        try:
+            llm_codes = asyncio.run(
+                classify_single_response(
+                    response_id=response_id,
+                    response_text=response_text,
+                    llm=llm,
+                    question=question,
+                    refined_themes_df=themes_df,
+                    examples=examples_str,
+                )
+            )
+        except Exception as e:
+            console.print(f"[red]LLM error: {e}[/red]")
+            console.print("[yellow]Skipping this response.[/yellow]")
+            continue
+
+        # Compare
+        _display_comparison(human_codes, llm_codes, themes_df)
+        total_reviewed += 1
+
+        human_set = set(human_codes)
+        llm_set = set(llm_codes)
+
+        if human_set == llm_set:
+            consecutive_correct += 1
+            console.print(f"[green]Agreement! Streak: {consecutive_correct}/{streak_target}[/green]")
+        else:
+            judgment = _prompt_judgment()
+            if judgment == "h":
+                # Human is right — save as gold standard
+                explanation = _prompt_explanation()
+                gold_row: dict = {"response": response_text}
+                for i, code in enumerate(sorted(human_codes), 1):
+                    gold_row[f"code_{i}"] = code
+                if explanation:
+                    gold_row["explanation"] = explanation
+                gold_rows.append(gold_row)
+                # Add to examples DataFrame for future LLM calls
+                examples_df = pd.concat(
+                    [examples_df, pd.DataFrame([gold_row])], ignore_index=True
+                )
+                consecutive_correct = 0
+                console.print(f"[yellow]Saved as gold standard example. Streak reset to 0.[/yellow]")
+            elif judgment == "l":
+                consecutive_correct += 1
+                console.print(f"[blue]LLM was right. Streak: {consecutive_correct}/{streak_target}[/blue]")
+            else:
+                console.print("[dim]Skipped.[/dim]")
+
+        # Check if streak target reached
+        if consecutive_correct >= streak_target:
+            console.print(
+                f"\n[bold green]Streak target reached ({streak_target})![/bold green]"
+            )
+            choice = console.input("[bold]Continue?[/bold] [green]\\[y][/green]es / [red]\\[n][/red]o: ").strip().lower()
+            if choice != "y":
+                stopped_early = True
+                break
+            consecutive_correct = 0
+
+    # Save results
+    _save_gold_examples(gold_rows, output, existing_df)
+
+    # Summary
+    console.print()
+    console.rule("[bold]Calibration Summary[/bold]")
+    summary = Table()
+    summary.add_column("Metric", style="bold")
+    summary.add_column("Value", justify="right")
+    summary.add_row("Responses reviewed", str(total_reviewed))
+    summary.add_row("New gold examples", str(len(gold_rows)))
+    total_examples = (len(existing_df) if existing_df is not None else 0) + len(gold_rows)
+    summary.add_row("Total examples in file", str(total_examples))
+    summary.add_row("Final streak", str(consecutive_correct))
+    console.print(summary)
+
+    if gold_rows:
+        console.print(f"[green]Wrote {len(gold_rows)} new examples to {output}[/green]")
+    else:
+        console.print("[dim]No new examples to save.[/dim]")
 
 
 if __name__ == "__main__":
