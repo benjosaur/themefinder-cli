@@ -349,9 +349,15 @@ def evaluate(
     boot_f1, boot_prec, boot_rec = [], [], []
     for _ in range(n_bootstrap):
         idx = rng.choice(n_instances, size=n_instances, replace=True)
-        boot_f1.append(f1_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0))
-        boot_prec.append(precision_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0))
-        boot_rec.append(recall_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0))
+        boot_f1.append(
+            f1_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0)
+        )
+        boot_prec.append(
+            precision_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0)
+        )
+        boot_rec.append(
+            recall_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0)
+        )
 
     def ci(samples):
         lo, hi = np.percentile(samples, [2.5, 97.5])
