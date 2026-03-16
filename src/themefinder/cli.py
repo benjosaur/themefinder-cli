@@ -183,9 +183,7 @@ def discover(
     """Discover themes from survey responses (sentiment -> generation -> condensation -> refinement)."""
     df = load_responses(input_csv, column=column, id_col=id_col, text_col=text_col)
     llm = make_llm(model, region, profile)
-    examples_str = (
-        format_discovery_examples(read_tabular(examples)) if examples else ""
-    )
+    examples_str = format_discovery_examples(read_tabular(examples)) if examples else ""
 
     async def _run():
         console.print(
@@ -197,7 +195,10 @@ def discover(
 
         console.print("[bold]Generating themes...[/bold]")
         theme_df, _ = await theme_generation(
-            sentiment_df, llm, question=question, concurrency=concurrency,
+            sentiment_df,
+            llm,
+            question=question,
+            concurrency=concurrency,
             examples=examples_str,
         )
 
@@ -274,9 +275,7 @@ def classify(
     df = load_responses(input_csv, column=column, id_col=id_col, text_col=text_col)
     themes_df = load_themes(themes)
     llm = make_llm(model, region, profile)
-    examples_str = (
-        format_mapping_examples(read_tabular(examples)) if examples else ""
-    )
+    examples_str = format_mapping_examples(read_tabular(examples)) if examples else ""
 
     async def _run():
         console.print(

@@ -1,5 +1,4 @@
 import pandas as pd
-import pytest
 
 from themefinder.examples import format_discovery_examples, format_mapping_examples
 
