@@ -25,7 +25,7 @@ from themefinder import (
     theme_mapping,
     theme_refinement,
 )
-from themefinder.examples import format_discovery_examples, format_mapping_examples
+from themefinder.examples import format_mapping_examples
 
 app = typer.Typer(help="themefinder CLI — discover, classify, and evaluate themes.")
 console = Console()
@@ -173,17 +173,10 @@ def discover(
     significance_pct: float = typer.Option(
         10.0, "--significance-pct", help="Significance threshold for clustering (%)"
     ),
-    examples: Optional[Path] = typer.Option(
-        None,
-        "--examples",
-        "-e",
-        help="Path to discovery examples CSV/XLSX (columns: responses, topics)",
-    ),
 ):
     """Discover themes from survey responses (sentiment -> generation -> condensation -> refinement)."""
     df = load_responses(input_csv, column=column, id_col=id_col, text_col=text_col)
     llm = make_llm(model, region, profile)
-    examples_str = format_discovery_examples(read_tabular(examples)) if examples else ""
 
     async def _run():
         console.print(
@@ -199,7 +192,6 @@ def discover(
             llm,
             question=question,
             concurrency=concurrency,
-            examples=examples_str,
         )
 
         console.print("[bold]Condensing themes...[/bold]")
