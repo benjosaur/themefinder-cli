@@ -1,6 +1,6 @@
 import pandas as pd
 
-from themefinder.examples import format_discovery_examples, format_mapping_examples
+from themefinder.examples import format_mapping_examples
 
 
 # ---------------------------------------------------------------------------
@@ -53,61 +53,3 @@ class TestFormatMappingExamples:
         assert "Example 1:" in result
         assert "Assigned topics: A" in result
         assert "Explanation:" not in result
-
-
-# ---------------------------------------------------------------------------
-# format_discovery_examples
-# ---------------------------------------------------------------------------
-
-
-class TestFormatDiscoveryExamples:
-    def test_basic(self):
-        df = pd.DataFrame(
-            {
-                "responses": [
-                    "I think this is a terrible idea",
-                    "The policy will help everyone",
-                ],
-                "topics": [
-                    "Job losses: The policy change would lead to unemployment",
-                    "Economic growth: The policy boosts the economy",
-                ],
-            }
-        )
-        result = format_discovery_examples(df)
-        assert "kinds of responses you might encounter" in result
-        assert '- "I think this is a terrible idea"' in result
-        assert "kinds of topics that should be extracted" in result
-        assert "- Job losses: The policy change would lead to unemployment" in result
-
-    def test_empty_returns_empty_string(self):
-        assert format_discovery_examples(None) == ""
-        assert format_discovery_examples(pd.DataFrame()) == ""
-
-    def test_partial_columns(self):
-        """One column has more rows than the other (NaN padding)."""
-        df = pd.DataFrame(
-            {
-                "responses": ["Response A", "Response B", "Response C"],
-                "topics": ["Topic 1", None, None],
-            }
-        )
-        result = format_discovery_examples(df)
-        assert '- "Response A"' in result
-        assert '- "Response B"' in result
-        assert '- "Response C"' in result
-        assert "- Topic 1" in result
-        # NaN topics should not appear
-        assert result.count("- Topic") == 1
-
-    def test_only_responses(self):
-        df = pd.DataFrame({"responses": ["one", "two"]})
-        result = format_discovery_examples(df)
-        assert "kinds of responses" in result
-        assert "kinds of topics" not in result
-
-    def test_only_topics(self):
-        df = pd.DataFrame({"topics": ["Topic A", "Topic B"]})
-        result = format_discovery_examples(df)
-        assert "kinds of topics" in result
-        assert "kinds of responses" not in result

@@ -142,9 +142,6 @@ EXAMPLE OUTPUT (showing the structure)
 QUESTION:
 {question}
 
-EXAMPLES:
-{examples}
-
 RESPONSES:
 {responses}"""
 
