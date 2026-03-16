@@ -409,6 +409,66 @@ async def theme_mapping(
     )
 
 
+async def classify_single_response(
+    response_id: int,
+    response_text: str,
+    llm: LLM,
+    question: str,
+    refined_themes_df: pd.DataFrame,
+    examples: str = "",
+    prompt_template: str = THEME_MAPPING,
+    system_prompt: str = CONSULTATION_SYSTEM_PROMPT,
+) -> list[str]:
+    """Classify a single response against refined themes using an LLM.
+
+    Args:
+        response_id: The response identifier.
+        response_text: The response text to classify.
+        llm: LLM instance to use for classification.
+        question: The survey question.
+        refined_themes_df: DataFrame of refined themes with topic_id and topic columns.
+        examples: Pre-formatted examples string for few-shot prompting.
+        prompt_template: Prompt template string.
+        system_prompt: System prompt to guide the LLM's behavior.
+
+    Returns:
+        List of assigned topic code strings (e.g. ["A", "C"]).
+    """
+
+    def transpose_refined_themes(refined_themes: pd.DataFrame):
+        transposed_df = pd.DataFrame(
+            [refined_themes["topic"].to_numpy()], columns=refined_themes["topic_id"]
+        )
+        return transposed_df
+
+    responses = [{"response_id": response_id, "response": response_text}]
+    prompt = prompt_template.format(
+        system_prompt=system_prompt,
+        question=question,
+        refined_themes=transpose_refined_themes(refined_themes_df).to_dict(
+            orient="records"
+        ),
+        responses=responses,
+        examples=examples,
+    )
+
+    llm_response = await llm.ainvoke(prompt, output_model=ThemeMappingResponses)
+    parsed = llm_response.parsed
+    if hasattr(parsed, "model_dump"):
+        parsed = parsed.model_dump()
+    if isinstance(parsed, dict):
+        mapping_outputs = parsed["responses"]
+    else:
+        mapping_outputs = parsed.responses
+
+    for item in mapping_outputs:
+        rid = item["response_id"] if isinstance(item, dict) else item.response_id
+        if rid == response_id:
+            return item["labels"] if isinstance(item, dict) else item.labels
+
+    return []
+
+
 async def detail_detection(
     responses_df: pd.DataFrame,
     llm: LLM,

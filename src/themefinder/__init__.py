@@ -1,5 +1,6 @@
 from .llm import LLM, LLMResponse, OpenAILLM
 from .tasks import (
+    classify_single_response,
     detail_detection,
     find_themes,
     theme_clustering,
@@ -19,6 +20,7 @@ __all__ = [
     "LLM",
     "LLMResponse",
     "OpenAILLM",
+    "classify_single_response",
     "find_themes",
     "theme_clustering",
     "theme_condensation",
