@@ -24,6 +24,13 @@ from themefinder.prompts import (
 from themefinder.themefinder_logging import logger
 
 
+def _transpose_refined_themes(refined_themes: pd.DataFrame) -> pd.DataFrame:
+    """Transpose topics for increased legibility in LLM prompts."""
+    return pd.DataFrame(
+        [refined_themes["topic"].to_numpy()], columns=refined_themes["topic_id"]
+    )
+
+
 async def find_themes(
     responses_df: pd.DataFrame,
     llm: LLM,
@@ -385,13 +392,6 @@ async def theme_mapping(
         f"Running theme mapping on {len(responses_df)} responses using {len(refined_themes_df)} themes"
     )
 
-    def transpose_refined_themes(refined_themes: pd.DataFrame):
-        """Transpose topics for increased legibility."""
-        transposed_df = pd.DataFrame(
-            [refined_themes["topic"].to_numpy()], columns=refined_themes["topic_id"]
-        )
-        return transposed_df
-
     return await batch_and_run(
         responses_df,
         prompt_template,
@@ -399,7 +399,7 @@ async def theme_mapping(
         output_model=ThemeMappingResponses,
         batch_size=batch_size,
         question=question,
-        refined_themes=transpose_refined_themes(refined_themes_df).to_dict(
+        refined_themes=_transpose_refined_themes(refined_themes_df).to_dict(
             orient="records"
         ),
         integrity_check=True,
@@ -435,17 +435,11 @@ async def classify_single_response(
         List of assigned topic code strings (e.g. ["A", "C"]).
     """
 
-    def transpose_refined_themes(refined_themes: pd.DataFrame):
-        transposed_df = pd.DataFrame(
-            [refined_themes["topic"].to_numpy()], columns=refined_themes["topic_id"]
-        )
-        return transposed_df
-
     responses = [{"response_id": response_id, "response": response_text}]
     prompt = prompt_template.format(
         system_prompt=system_prompt,
         question=question,
-        refined_themes=transpose_refined_themes(refined_themes_df).to_dict(
+        refined_themes=_transpose_refined_themes(refined_themes_df).to_dict(
             orient="records"
         ),
         responses=responses,

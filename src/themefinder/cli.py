@@ -414,15 +414,22 @@ def _print_themes_table(themes_df: pd.DataFrame) -> None:
     console.print(table)
 
 
-def _prompt_human_codes(valid_codes: set[str]) -> list[str] | None:
-    """Read topic codes from stdin. Returns None on quit."""
+def _prompt_human_codes(
+    valid_codes: set[str], themes_df: pd.DataFrame
+) -> list[str] | None:
+    """Read topic codes from stdin. Returns None on quit.
+
+    Handles 't' to re-display themes inline, so the caller doesn't need
+    sentinel values.
+    """
     while True:
-        raw = console.input("[bold]Your codes[/bold] (comma-separated, or [cyan]q[/cyan] to quit): ")
+        raw = console.input("[bold]Your codes[/bold] (comma-separated, or [cyan]t[/cyan]=themes, [cyan]q[/cyan]=quit): ")
         raw = raw.strip()
         if raw.lower() == "q":
             return None
         if raw.lower() == "t":
-            return "SHOW_THEMES"  # type: ignore[return-value]
+            _print_themes_table(themes_df)
+            continue
         codes = [c.strip().upper() for c in raw.split(",") if c.strip()]
         if not codes:
             console.print("[red]Please enter at least one code.[/red]")
@@ -562,23 +569,14 @@ def calibrate(
         console.rule(f"[bold]Response {idx + 1}/{len(df)}[/bold] (streak: {consecutive_correct}/{streak_target})")
         console.print(f"\n[italic]{response_text}[/italic]\n")
 
-        # Get human codes
-        while True:
-            human_codes = _prompt_human_codes(valid_codes)
-            if human_codes is None:
-                # Quit
-                stopped_early = True
-                break
-            if human_codes == "SHOW_THEMES":
-                _print_themes_table(themes_df)
-                continue
-            break
-
-        if stopped_early:
+        # Get human codes (handles 't' for themes internally)
+        human_codes = _prompt_human_codes(valid_codes, themes_df)
+        if human_codes is None:
+            stopped_early = True
             break
 
         # Get LLM codes
-        examples_str = format_mapping_examples(examples_df if not examples_df.empty else None)
+        examples_str = format_mapping_examples(examples_df)
         console.print("[dim]Asking LLM...[/dim]")
         try:
             llm_codes = asyncio.run(
@@ -614,8 +612,7 @@ def calibrate(
                 gold_row: dict = {"response": response_text}
                 for i, code in enumerate(sorted(human_codes), 1):
                     gold_row[f"code_{i}"] = code
-                if explanation:
-                    gold_row["explanation"] = explanation
+                gold_row["explanation"] = explanation
                 gold_rows.append(gold_row)
                 # Add to examples DataFrame for future LLM calls
                 examples_df = pd.concat(
