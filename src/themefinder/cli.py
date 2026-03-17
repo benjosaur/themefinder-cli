@@ -350,9 +350,15 @@ def evaluate(
     boot_f1, boot_prec, boot_rec = [], [], []
     for _ in range(n_bootstrap):
         idx = rng.choice(n_instances, size=n_instances, replace=True)
-        boot_f1.append(f1_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0))
-        boot_prec.append(precision_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0))
-        boot_rec.append(recall_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0))
+        boot_f1.append(
+            f1_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0)
+        )
+        boot_prec.append(
+            precision_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0)
+        )
+        boot_rec.append(
+            recall_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0)
+        )
 
     def ci(samples):
         lo, hi = np.percentile(samples, [2.5, 97.5])
@@ -423,7 +429,9 @@ def _prompt_human_codes(
     sentinel values.
     """
     while True:
-        raw = console.input("[bold]Your codes[/bold] (comma-separated, or [cyan]t[/cyan]=themes, [cyan]q[/cyan]=quit): ")
+        raw = console.input(
+            "[bold]Your codes[/bold] (comma-separated, or [cyan]t[/cyan]=themes, [cyan]q[/cyan]=quit): "
+        )
         raw = raw.strip()
         if raw.lower() == "q":
             return None
@@ -455,7 +463,9 @@ def _display_comparison(
     table.add_column("Human", style="green")
     table.add_column("LLM", style="blue")
 
-    human_str = ", ".join(f"{c} ({topic_lookup.get(c, '?')})" for c in sorted(human_codes))
+    human_str = ", ".join(
+        f"{c} ({topic_lookup.get(c, '?')})" for c in sorted(human_codes)
+    )
     llm_str = ", ".join(f"{c} ({topic_lookup.get(c, '?')})" for c in sorted(llm_codes))
     table.add_row(human_str, llm_str)
     console.print(table)
@@ -464,9 +474,13 @@ def _display_comparison(
 def _prompt_judgment() -> str:
     """When codes differ, ask human to judge. Returns 'h', 'l', or 's'."""
     while True:
-        choice = console.input(
-            "[bold]Who is right?[/bold] [green]\\[h][/green]uman / [blue]\\[l][/blue]lm / [yellow]\\[s][/yellow]kip: "
-        ).strip().lower()
+        choice = (
+            console.input(
+                "[bold]Who is right?[/bold] [green]\\[h][/green]uman / [blue]\\[l][/blue]lm / [yellow]\\[s][/yellow]kip: "
+            )
+            .strip()
+            .lower()
+        )
         if choice in ("h", "l", "s"):
             return choice
         console.print("[red]Please enter h, l, or s.[/red]")
@@ -474,7 +488,9 @@ def _prompt_judgment() -> str:
 
 def _prompt_explanation() -> str:
     """Get a brief explanation from the human."""
-    return console.input("[bold]Brief explanation[/bold] (why the LLM was wrong): ").strip()
+    return console.input(
+        "[bold]Brief explanation[/bold] (why the LLM was wrong): "
+    ).strip()
 
 
 def _save_gold_examples(
@@ -555,24 +571,26 @@ def calibrate(
 
     # Display themes
     _print_themes_table(themes_df)
-    console.print(f"\n[bold]{len(df)} responses to label. Enter [cyan]t[/cyan] to re-show themes, [cyan]q[/cyan] to quit.[/bold]\n")
+    console.print(
+        f"\n[bold]{len(df)} responses to label. Enter [cyan]t[/cyan] to re-show themes, [cyan]q[/cyan] to quit.[/bold]\n"
+    )
 
     gold_rows: list[dict] = []
     consecutive_correct = 0
     total_reviewed = 0
-    stopped_early = False
 
     for idx, (_, row) in enumerate(df.iterrows()):
         response_id = int(row["response_id"])
         response_text = str(row["response"])
 
-        console.rule(f"[bold]Response {idx + 1}/{len(df)}[/bold] (streak: {consecutive_correct}/{streak_target})")
+        console.rule(
+            f"[bold]Response {idx + 1}/{len(df)}[/bold] (streak: {consecutive_correct}/{streak_target})"
+        )
         console.print(f"\n[italic]{response_text}[/italic]\n")
 
         # Get human codes (handles 't' for themes internally)
         human_codes = _prompt_human_codes(valid_codes, themes_df)
         if human_codes is None:
-            stopped_early = True
             break
 
         # Get LLM codes
@@ -603,7 +621,9 @@ def calibrate(
 
         if human_set == llm_set:
             consecutive_correct += 1
-            console.print(f"[green]Agreement! Streak: {consecutive_correct}/{streak_target}[/green]")
+            console.print(
+                f"[green]Agreement! Streak: {consecutive_correct}/{streak_target}[/green]"
+            )
         else:
             judgment = _prompt_judgment()
             if judgment == "h":
@@ -619,10 +639,14 @@ def calibrate(
                     [examples_df, pd.DataFrame([gold_row])], ignore_index=True
                 )
                 consecutive_correct = 0
-                console.print(f"[yellow]Saved as gold standard example. Streak reset to 0.[/yellow]")
+                console.print(
+                    "[yellow]Saved as gold standard example. Streak reset to 0.[/yellow]"
+                )
             elif judgment == "l":
                 consecutive_correct += 1
-                console.print(f"[blue]LLM was right. Streak: {consecutive_correct}/{streak_target}[/blue]")
+                console.print(
+                    f"[blue]LLM was right. Streak: {consecutive_correct}/{streak_target}[/blue]"
+                )
             else:
                 console.print("[dim]Skipped.[/dim]")
 
@@ -631,9 +655,14 @@ def calibrate(
             console.print(
                 f"\n[bold green]Streak target reached ({streak_target})![/bold green]"
             )
-            choice = console.input("[bold]Continue?[/bold] [green]\\[y][/green]es / [red]\\[n][/red]o: ").strip().lower()
+            choice = (
+                console.input(
+                    "[bold]Continue?[/bold] [green]\\[y][/green]es / [red]\\[n][/red]o: "
+                )
+                .strip()
+                .lower()
+            )
             if choice != "y":
-                stopped_early = True
                 break
             consecutive_correct = 0
 
@@ -648,7 +677,9 @@ def calibrate(
     summary.add_column("Value", justify="right")
     summary.add_row("Responses reviewed", str(total_reviewed))
     summary.add_row("New gold examples", str(len(gold_rows)))
-    total_examples = (len(existing_df) if existing_df is not None else 0) + len(gold_rows)
+    total_examples = (len(existing_df) if existing_df is not None else 0) + len(
+        gold_rows
+    )
     summary.add_row("Total examples in file", str(total_examples))
     summary.add_row("Final streak", str(consecutive_correct))
     console.print(summary)
