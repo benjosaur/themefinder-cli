@@ -20,9 +20,7 @@ def format_mapping_examples(examples_df: pd.DataFrame | None) -> str:
         return ""
 
     code_cols = sorted(c for c in examples_df.columns if c.startswith("code_"))
-    llm_code_cols = sorted(
-        c for c in examples_df.columns if c.startswith("llm_code_")
-    )
+    llm_code_cols = sorted(c for c in examples_df.columns if c.startswith("llm_code_"))
     if not code_cols or not llm_code_cols:
         return ""
 

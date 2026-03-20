@@ -757,9 +757,7 @@ def calibrate(
 
         if human_set == llm_set:
             consecutive_correct += 1
-            console.print(
-                f"[green]Agreement! Streak: {consecutive_correct}[/green]"
-            )
+            console.print(f"[green]Agreement! Streak: {consecutive_correct}[/green]")
         else:
             judgment = _prompt_judgment()
             if judgment == "h":
