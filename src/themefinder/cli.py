@@ -634,8 +634,10 @@ def _prompt_judgment() -> str:
 
 
 def _prompt_explanation() -> str:
-    """Get a brief explanation from the human."""
-    return console.input("[bold]Brief explanation:[/bold] ").strip()
+    """Get an optional note from the human (not sent to LLM)."""
+    return console.input(
+        "[bold]Note for yourself (optional, press Enter to skip):[/bold] "
+    ).strip()
 
 
 def _save_gold_examples(
@@ -672,8 +674,10 @@ def calibrate(
     ),
     region: str = typer.Option("eu-west-2", "--region", help="AWS region"),
     profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile name"),
-    streak_target: int = typer.Option(
-        5, "--streak", help="Consecutive correct LLM responses before stop is offered"
+    max_examples: int = typer.Option(
+        20,
+        "--max-examples",
+        help="Hard cap on contrastive examples to prevent over-prompting (default 20)",
     ),
     id_col: str = typer.Option(
         "response_id", "--id-col", help="Column name for response IDs"
@@ -693,13 +697,12 @@ def calibrate(
 ):
     """Interactively calibrate LLM mapping by comparing human and LLM labels row by row.
 
-    Every reviewed row is saved as a gold standard example. Agreements are saved
-    with a blank explanation; disagreements are saved with the correct codes and
-    an optional explanation. If neither human nor LLM got it right, choose
-    [n]either to provide the correct codes.
+    Only disagreements (where the LLM was wrong) are saved as contrastive
+    few-shot examples showing the LLM's incorrect answer alongside the
+    correction. Agreements and cases where the LLM was right are not saved.
 
-    You must label at least STREAK consecutive correct LLM responses before you
-    can stop (default 5).
+    Calibration stops when you quit or when the hard cap on contrastive
+    examples is reached (default 20, to prevent over-prompting).
     """
     df = load_responses(input_csv, id_col=id_col, text_col=text_col)
     themes_df = load_themes(themes)
@@ -730,6 +733,7 @@ def calibrate(
 
     gold_rows: list[dict] = []
     consecutive_correct = 0
+    error_count = len(examples_df) if not examples_df.empty else 0
     total_reviewed = 0
 
     for idx, (_, row) in enumerate(df.iterrows()):
@@ -737,7 +741,8 @@ def calibrate(
         response_text = str(row["response"])
 
         console.rule(
-            f"[bold]Response {idx + 1}/{len(df)}[/bold] (streak: {consecutive_correct}/{streak_target})"
+            f"[bold]Response {idx + 1}/{len(df)}[/bold]"
+            f" (examples: {error_count}/{max_examples} | streak: {consecutive_correct})"
         )
         console.print(f"\n[italic]{response_text}[/italic]\n")
 
@@ -773,45 +778,42 @@ def calibrate(
         human_set = set(human_codes)
         llm_set = set(llm_codes)
 
+        save_contrastive = False
         correct_codes: list[str] | None = None
         explanation = ""
 
         if human_set == llm_set:
             consecutive_correct += 1
-            console.print(
-                f"[green]Agreement! Streak: {consecutive_correct}/{streak_target}[/green]"
-            )
-            correct_codes = human_codes
+            console.print(f"[green]Agreement! Streak: {consecutive_correct}[/green]")
         else:
             judgment = _prompt_judgment()
             if judgment == "h":
                 explanation = _prompt_explanation()
                 correct_codes = human_codes
+                save_contrastive = True
                 consecutive_correct = 0
-                console.print(
-                    "[yellow]Saved with human codes. Streak reset to 0.[/yellow]"
-                )
+                console.print("[yellow]Saved contrastive example.[/yellow]")
             elif judgment == "l":
-                correct_codes = llm_codes
                 consecutive_correct += 1
                 console.print(
-                    f"[blue]LLM was right. Streak: {consecutive_correct}/{streak_target}[/blue]"
+                    f"[blue]LLM was right. Streak: {consecutive_correct}[/blue]"
                 )
             elif judgment == "n":
                 correct_codes = _prompt_human_codes(valid_codes, themes_df)
                 if correct_codes is None:
                     break
                 explanation = _prompt_explanation()
+                save_contrastive = True
                 consecutive_correct = 0
-                console.print(
-                    "[yellow]Saved with corrected codes. Streak reset to 0.[/yellow]"
-                )
+                console.print("[yellow]Saved contrastive example.[/yellow]")
             else:
                 console.print("[dim]Skipped.[/dim]")
 
-        # Save gold standard example (unless skipped)
-        if correct_codes is not None:
+        # Save contrastive example (only when LLM was wrong)
+        if save_contrastive and correct_codes is not None:
             gold_row: dict = {"response": response_text}
+            for i, code in enumerate(sorted(llm_codes), 1):
+                gold_row[f"llm_code_{i}"] = code
             for i, code in enumerate(sorted(correct_codes), 1):
                 gold_row[f"code_{i}"] = code
             gold_row["explanation"] = explanation
@@ -819,22 +821,15 @@ def calibrate(
             examples_df = pd.concat(
                 [examples_df, pd.DataFrame([gold_row])], ignore_index=True
             )
+            error_count += 1
 
-        # Check if streak target reached
-        if consecutive_correct >= streak_target:
+        # Check if hard cap reached
+        if error_count >= max_examples:
             console.print(
-                f"\n[bold green]Streak target reached ({streak_target})![/bold green]"
+                f"\n[bold red]Reached {max_examples} contrastive examples "
+                f"(over-prompting ceiling). Stopping.[/bold red]"
             )
-            choice = (
-                console.input(
-                    "[bold]Continue?[/bold] [green]\\[y][/green]es / [red]\\[n][/red]o: "
-                )
-                .strip()
-                .lower()
-            )
-            if choice != "y":
-                break
-            consecutive_correct = 0
+            break
 
     # Save results
     _save_gold_examples(gold_rows, output, existing_df)
@@ -846,11 +841,8 @@ def calibrate(
     summary.add_column("Metric", style="bold")
     summary.add_column("Value", justify="right")
     summary.add_row("Responses reviewed", str(total_reviewed))
-    summary.add_row("New gold examples", str(len(gold_rows)))
-    total_examples = (len(existing_df) if existing_df is not None else 0) + len(
-        gold_rows
-    )
-    summary.add_row("Total examples in file", str(total_examples))
+    summary.add_row("New contrastive examples", str(len(gold_rows)))
+    summary.add_row("Total contrastive examples", str(error_count))
     summary.add_row("Final streak", str(consecutive_correct))
     console.print(summary)
 
