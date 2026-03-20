@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +15,7 @@ from langchain_aws import ChatBedrockConverse
 from rich.console import Console
 from rich.table import Table
 import numpy as np
+from scipy.stats import kendalltau
 from sklearn.metrics import f1_score, precision_score, recall_score
 from sklearn.preprocessing import MultiLabelBinarizer
 
@@ -131,6 +133,41 @@ def read_coded_csv(path: Path) -> pd.DataFrame:
 
     df["labels"] = df.apply(extract_labels, axis=1)
     return df[["response_id", "labels"]]
+
+
+def _compute_theme_frequencies(
+    pred_labels: list[frozenset[str]],
+    ref_labels: list[frozenset[str]],
+    all_labels: list[str],
+    n_responses: int,
+) -> tuple[list[dict], float, float]:
+    """Per-theme frequency comparison and Kendall's tau rank correlation."""
+    pred_counter = Counter(label for s in pred_labels for label in s)
+    ref_counter = Counter(label for s in ref_labels for label in s)
+
+    theme_freq = []
+    for label in all_labels:
+        pc = pred_counter.get(label, 0)
+        rc = ref_counter.get(label, 0)
+        theme_freq.append(
+            {
+                "label": label,
+                "pred_count": pc,
+                "pred_pct": round(pc / n_responses * 100, 1),
+                "ref_count": rc,
+                "ref_pct": round(rc / n_responses * 100, 1),
+            }
+        )
+    theme_freq.sort(key=lambda x: x["ref_count"], reverse=True)
+
+    pred_freq_vec = [pred_counter.get(label, 0) for label in all_labels]
+    ref_freq_vec = [ref_counter.get(label, 0) for label in all_labels]
+    if len(all_labels) >= 2:
+        tau, tau_p = kendalltau(pred_freq_vec, ref_freq_vec)
+    else:
+        tau, tau_p = float("nan"), float("nan")
+
+    return theme_freq, float(tau), float(tau_p)
 
 
 # ---------------------------------------------------------------------------
@@ -371,6 +408,10 @@ def evaluate(
 
     f1_ci, prec_ci, rec_ci = ci(boot_f1), ci(boot_prec), ci(boot_rec)
 
+    theme_freq, tau, tau_p = _compute_theme_frequencies(
+        pred_labels, ref_labels, all_labels, len(merged)
+    )
+
     metrics = {
         "n_responses": len(merged),
         "n_labels": len(all_labels),
@@ -382,17 +423,43 @@ def evaluate(
         "recall_ci": rec_ci,
         "exact_match": round(exact_match, 4),
         "overlap_rate": round(overlap, 4),
+        "kendall_tau": round(tau, 4) if not np.isnan(tau) else None,
+        "kendall_tau_pvalue": round(tau_p, 4) if not np.isnan(tau_p) else None,
+        "theme_frequencies": theme_freq,
     }
 
     table = Table(title="Evaluation Metrics")
     table.add_column("Metric", style="bold")
     table.add_column("Value", justify="right")
     for k, v in metrics.items():
+        if k in ("theme_frequencies",):
+            continue
         if k.endswith("_ci"):
             table.add_row(k, f"[{v[0]}, {v[1]}]")
         else:
             table.add_row(k, str(v))
     console.print(table)
+
+    pred_name = predicted_csv.stem
+    ref_name = reference_csv.stem
+    n_pred = len(pred)
+    n_ref = len(ref)
+
+    freq_table = Table(title="Theme Frequencies")
+    freq_table.add_column("Theme", style="bold")
+    freq_table.add_column(f"{ref_name}\nCount (n={n_ref})", justify="right")
+    freq_table.add_column(f"{ref_name}\n%", justify="right")
+    freq_table.add_column(f"{pred_name}\nCount (n={n_pred})", justify="right")
+    freq_table.add_column(f"{pred_name}\n%", justify="right")
+    for tf in theme_freq:
+        freq_table.add_row(
+            tf["label"],
+            str(tf["ref_count"]),
+            f"{tf['ref_pct']:.1f}",
+            str(tf["pred_count"]),
+            f"{tf['pred_pct']:.1f}",
+        )
+    console.print(freq_table)
 
     if output:
         output.write_text(json.dumps(metrics, indent=2))
