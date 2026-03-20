@@ -40,6 +40,16 @@ console = Console()
 # ---------------------------------------------------------------------------
 
 
+def resolve_context(value: str | None) -> str:
+    """Resolve --context value: read file if path exists, else use as literal string."""
+    if value is None:
+        return ""
+    path = Path(value)
+    if path.is_file():
+        return f"\nADDITIONAL CONTEXT:\n{path.read_text().strip()}"
+    return f"\nADDITIONAL CONTEXT:\n{value}"
+
+
 def make_llm(
     model: str,
     region: str,
@@ -302,12 +312,19 @@ def classify(
         "-e",
         help="Path to mapping examples CSV/XLSX (columns: response, code_*, explanation)",
     ),
+    context: Optional[str] = typer.Option(
+        None,
+        "--context",
+        "-x",
+        help="Extra context for prompts: a file path or literal string (e.g. legislation details)",
+    ),
 ):
     """Classify responses against a theme set (theme mapping + optional detail detection)."""
     df = load_responses(input_csv, column=column, id_col=id_col, text_col=text_col)
     themes_df = load_themes(themes)
     llm = make_llm(model, region, profile)
     examples_str = format_mapping_examples(read_tabular(examples)) if examples else ""
+    extra_context = resolve_context(context)
 
     async def _run():
         console.print(
@@ -320,6 +337,7 @@ def classify(
             refined_themes_df=themes_df,
             concurrency=concurrency,
             examples=examples_str,
+            extra_context=extra_context,
         )
 
         if detail:
@@ -329,6 +347,7 @@ def classify(
                 llm,
                 question=question,
                 concurrency=concurrency,
+                extra_context=extra_context,
             )
             mapping_df = mapping_df.merge(
                 detail_df[["response_id", "evidence_rich"]],

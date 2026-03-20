@@ -40,7 +40,7 @@ If no topics should be merged and the termination conditions are met, set should
 N.B. Under no circumstances should you create a parent theme with a single child. You do not need to return all of the original themes, if they don't belong to a newly created parent feel free to omit them."""
 
 DETAIL_DETECTION = """{system_prompt}
-
+{extra_context}
 You will receive a list of RESPONSES, each containing a response_id and a response.
 Your job is to analyze each response to the QUESTION below and decide if a response contains rich evidence.
 You MUST include every response ID in the output.
@@ -146,7 +146,7 @@ RESPONSES:
 {responses}"""
 
 THEME_MAPPING = """{system_prompt}
-
+{extra_context}
 Your job is to help identify which topics come up in free_text_responses to a question.
 
 You will be given:
@@ -270,6 +270,7 @@ class ThemeMappingKwargs(TypedDict):
     question: str
     refined_themes: Any
     system_prompt: str
+    extra_context: str
 
 
 class DetailDetectionKwargs(TypedDict):
@@ -277,6 +278,7 @@ class DetailDetectionKwargs(TypedDict):
 
     question: str
     system_prompt: str
+    extra_context: str
 
 
 # Typed prompt functions
@@ -311,6 +313,7 @@ def detail_detection_prompt(
     system_prompt: str,
     question: str,
     responses: list[dict[str, Any]],
+    extra_context: str = "",
 ) -> str:
     """Generate prompt for detail detection.
 
@@ -318,6 +321,7 @@ def detail_detection_prompt(
         system_prompt: System prompt for LLM behavior
         question: The question being analyzed
         responses: List of response dictionaries to analyze
+        extra_context: Additional context to include in the prompt
 
     Returns:
         Formatted prompt string
@@ -326,6 +330,7 @@ def detail_detection_prompt(
         system_prompt=system_prompt,
         question=question,
         responses=responses,
+        extra_context=extra_context,
     )
 
 
@@ -378,6 +383,7 @@ def theme_mapping_prompt(
     question: str,
     refined_themes: list[dict[str, Any]],
     responses: list[dict[str, Any]],
+    extra_context: str = "",
 ) -> str:
     """Generate prompt for theme mapping.
 
@@ -386,6 +392,7 @@ def theme_mapping_prompt(
         question: The question being analyzed
         refined_themes: List of refined theme dictionaries to map to
         responses: List of response dictionaries to map
+        extra_context: Additional context to include in the prompt
 
     Returns:
         Formatted prompt string
@@ -395,6 +402,7 @@ def theme_mapping_prompt(
         question=question,
         refined_themes=refined_themes,
         responses=responses,
+        extra_context=extra_context,
     )
 
 
