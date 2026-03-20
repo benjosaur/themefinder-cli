@@ -684,6 +684,12 @@ def calibrate(
     shuffle: bool = typer.Option(
         False, "--shuffle/--no-shuffle", help="Randomize response order"
     ),
+    context: Optional[str] = typer.Option(
+        None,
+        "--context",
+        "-x",
+        help="Extra context for prompts: a file path or literal string (e.g. legislation details)",
+    ),
 ):
     """Interactively calibrate LLM mapping by comparing human and LLM labels row by row.
 
@@ -698,6 +704,7 @@ def calibrate(
     df = load_responses(input_csv, id_col=id_col, text_col=text_col)
     themes_df = load_themes(themes)
     llm = make_llm(model, region, profile)
+    extra_context = resolve_context(context)
 
     # Load existing examples if output file exists
     existing_df = None
@@ -751,6 +758,7 @@ def calibrate(
                     question=question,
                     refined_themes_df=themes_df,
                     examples=examples_str,
+                    extra_context=extra_context,
                 )
             )
         except Exception as e:
