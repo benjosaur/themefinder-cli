@@ -472,25 +472,23 @@ def _display_comparison(
 
 
 def _prompt_judgment() -> str:
-    """When codes differ, ask human to judge. Returns 'h', 'l', or 's'."""
+    """When codes differ, ask human to judge. Returns 'h', 'l', 'n', or 's'."""
     while True:
         choice = (
             console.input(
-                "[bold]Who is right?[/bold] [green]\\[h][/green]uman / [blue]\\[l][/blue]lm / [yellow]\\[s][/yellow]kip: "
+                "[bold]Who is right?[/bold] [green]\\[h][/green]uman / [blue]\\[l][/blue]lm / [magenta]\\[n][/magenta]either / [yellow]\\[s][/yellow]kip: "
             )
             .strip()
             .lower()
         )
-        if choice in ("h", "l", "s"):
+        if choice in ("h", "l", "n", "s"):
             return choice
-        console.print("[red]Please enter h, l, or s.[/red]")
+        console.print("[red]Please enter h, l, n, or s.[/red]")
 
 
 def _prompt_explanation() -> str:
     """Get a brief explanation from the human."""
-    return console.input(
-        "[bold]Brief explanation[/bold] (why the LLM was wrong): "
-    ).strip()
+    return console.input("[bold]Brief explanation:[/bold] ").strip()
 
 
 def _save_gold_examples(
@@ -542,9 +540,10 @@ def calibrate(
 ):
     """Interactively calibrate LLM mapping by comparing human and LLM labels row by row.
 
-    Builds a gold standard examples file of common LLM mistakes. Each row where
-    the human disagrees with the LLM (and the human is right) gets saved with an
-    explanation. Later LLM calls in the session use accumulated examples.
+    Every reviewed row is saved as a gold standard example. Agreements are saved
+    with a blank explanation; disagreements are saved with the correct codes and
+    an optional explanation. If neither human nor LLM got it right, choose
+    [n]either to provide the correct codes.
 
     You must label at least STREAK consecutive correct LLM responses before you
     can stop (default 5).
@@ -619,36 +618,52 @@ def calibrate(
         human_set = set(human_codes)
         llm_set = set(llm_codes)
 
+        correct_codes: list[str] | None = None
+        explanation = ""
+
         if human_set == llm_set:
             consecutive_correct += 1
             console.print(
                 f"[green]Agreement! Streak: {consecutive_correct}/{streak_target}[/green]"
             )
+            correct_codes = human_codes
         else:
             judgment = _prompt_judgment()
             if judgment == "h":
-                # Human is right — save as gold standard
                 explanation = _prompt_explanation()
-                gold_row: dict = {"response": response_text}
-                for i, code in enumerate(sorted(human_codes), 1):
-                    gold_row[f"code_{i}"] = code
-                gold_row["explanation"] = explanation
-                gold_rows.append(gold_row)
-                # Add to examples DataFrame for future LLM calls
-                examples_df = pd.concat(
-                    [examples_df, pd.DataFrame([gold_row])], ignore_index=True
-                )
+                correct_codes = human_codes
                 consecutive_correct = 0
                 console.print(
-                    "[yellow]Saved as gold standard example. Streak reset to 0.[/yellow]"
+                    "[yellow]Saved with human codes. Streak reset to 0.[/yellow]"
                 )
             elif judgment == "l":
+                correct_codes = llm_codes
                 consecutive_correct += 1
                 console.print(
                     f"[blue]LLM was right. Streak: {consecutive_correct}/{streak_target}[/blue]"
                 )
+            elif judgment == "n":
+                correct_codes = _prompt_human_codes(valid_codes, themes_df)
+                if correct_codes is None:
+                    break
+                explanation = _prompt_explanation()
+                consecutive_correct = 0
+                console.print(
+                    "[yellow]Saved with corrected codes. Streak reset to 0.[/yellow]"
+                )
             else:
                 console.print("[dim]Skipped.[/dim]")
+
+        # Save gold standard example (unless skipped)
+        if correct_codes is not None:
+            gold_row: dict = {"response": response_text}
+            for i, code in enumerate(sorted(correct_codes), 1):
+                gold_row[f"code_{i}"] = code
+            gold_row["explanation"] = explanation
+            gold_rows.append(gold_row)
+            examples_df = pd.concat(
+                [examples_df, pd.DataFrame([gold_row])], ignore_index=True
+            )
 
         # Check if streak target reached
         if consecutive_correct >= streak_target:
