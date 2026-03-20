@@ -372,6 +372,7 @@ async def theme_mapping(
     system_prompt: str = CONSULTATION_SYSTEM_PROMPT,
     concurrency: int = 10,
     examples: str = "",
+    extra_context: str = "",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Map survey responses to refined themes using an LLM.
 
@@ -384,6 +385,7 @@ async def theme_mapping(
         prompt_template: Prompt template string.
         system_prompt: System prompt to guide the LLM's behavior.
         concurrency: Number of concurrent API calls to make.
+        extra_context: Additional context to include in prompts.
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame]: (processed results, unprocessable rows)
@@ -406,6 +408,7 @@ async def theme_mapping(
         system_prompt=system_prompt,
         concurrency=concurrency,
         examples=examples,
+        extra_context=extra_context,
     )
 
 
@@ -418,6 +421,7 @@ async def classify_single_response(
     examples: str = "",
     prompt_template: str = THEME_MAPPING,
     system_prompt: str = CONSULTATION_SYSTEM_PROMPT,
+    extra_context: str = "",
 ) -> list[str]:
     """Classify a single response against refined themes using an LLM.
 
@@ -430,6 +434,7 @@ async def classify_single_response(
         examples: Pre-formatted examples string for few-shot prompting.
         prompt_template: Prompt template string.
         system_prompt: System prompt to guide the LLM's behavior.
+        extra_context: Additional context to include in the prompt.
 
     Returns:
         List of assigned topic code strings (e.g. ["A", "C"]).
@@ -444,6 +449,7 @@ async def classify_single_response(
         ),
         responses=responses,
         examples=examples,
+        extra_context=extra_context,
     )
 
     llm_response = await llm.ainvoke(prompt, output_model=ThemeMappingResponses)
@@ -471,6 +477,7 @@ async def detail_detection(
     prompt_template: str = DETAIL_DETECTION,
     system_prompt: str = CONSULTATION_SYSTEM_PROMPT,
     concurrency: int = 10,
+    extra_context: str = "",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Identify responses that provide high-value detailed evidence.
 
@@ -482,6 +489,7 @@ async def detail_detection(
         prompt_template: Prompt template string.
         system_prompt: System prompt to guide the LLM's behavior.
         concurrency: Number of concurrent API calls to make.
+        extra_context: Additional context to include in prompts.
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame]: (processed results, unprocessable rows)
@@ -497,4 +505,5 @@ async def detail_detection(
         integrity_check=True,
         system_prompt=system_prompt,
         concurrency=concurrency,
+        extra_context=extra_context,
     )
