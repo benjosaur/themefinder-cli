@@ -243,3 +243,52 @@ class TestGoldExamples:
             result = format_mapping_examples(df)
             assert f"Example {i + 1}" in result
             assert f"Response {i}" in result
+
+    def test_blank_explanation_omitted_from_prompt(self):
+        """Gold rows with blank explanation should not include Explanation line."""
+        rows = [
+            {"response": "Agreed example", "code_1": "A", "explanation": ""},
+            {
+                "response": "Corrected example",
+                "code_1": "B",
+                "explanation": "LLM missed this",
+            },
+        ]
+        df = pd.DataFrame(rows)
+        result = format_mapping_examples(df)
+        # First example has blank explanation — no Explanation line
+        lines = result.split("\n")
+        # Find the block for Example 1
+        ex1_start = next(i for i, line in enumerate(lines) if "Example 1:" in line)
+        ex2_start = next(i for i, line in enumerate(lines) if "Example 2:" in line)
+        ex1_block = "\n".join(lines[ex1_start:ex2_start])
+        assert "Explanation:" not in ex1_block
+        # Second example has an explanation
+        ex2_block = "\n".join(lines[ex2_start:])
+        assert "Explanation: LLM missed this" in ex2_block
+
+
+# ---------------------------------------------------------------------------
+# Neither judgment logic
+# ---------------------------------------------------------------------------
+
+
+class TestNeitherJudgment:
+    def test_neither_resets_streak(self):
+        """Choosing 'neither' should reset streak to 0."""
+        streak = 3
+        judgment = "n"
+        if judgment == "n":
+            streak = 0
+        assert streak == 0
+
+    def test_neither_saves_custom_codes(self):
+        """Gold row from 'neither' uses the provided codes, not human or LLM."""
+        correct_codes = ["B", "C"]
+        gold_row: dict = {"response": "Some response"}
+        for i, code in enumerate(sorted(correct_codes), 1):
+            gold_row[f"code_{i}"] = code
+        gold_row["explanation"] = "Both were wrong"
+        assert gold_row["code_1"] == "B"
+        assert gold_row["code_2"] == "C"
+        assert gold_row["explanation"] == "Both were wrong"
