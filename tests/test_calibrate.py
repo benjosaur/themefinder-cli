@@ -74,7 +74,7 @@ async def test_classify_single_response_with_examples(mock_llm, refined_themes_d
         llm=mock_llm,
         question="What do you think about public transport?",
         refined_themes_df=refined_themes_df,
-        examples='Example 1:\nResponse: "Too costly"\nAssigned topics: A\nExplanation: Cost related',
+        examples='Example 1:\nResponse: "Too costly"\nIncorrect topics: B\nCorrect topics: A',
     )
 
     assert labels == ["B"]
@@ -82,7 +82,8 @@ async def test_classify_single_response_with_examples(mock_llm, refined_themes_d
     call_args = mock_llm.ainvoke.call_args
     prompt = call_args[0][0]
     assert "Too costly" in prompt
-    assert "Cost related" in prompt
+    assert "Incorrect topics: B" in prompt
+    assert "Correct topics: A" in prompt
 
 
 @pytest.mark.asyncio
@@ -136,12 +137,12 @@ async def test_classify_single_response_dict_response(mock_llm, refined_themes_d
 
 
 # ---------------------------------------------------------------------------
-# Streak logic
+# Streak and error count logic
 # ---------------------------------------------------------------------------
 
 
 class TestStreakLogic:
-    """Test the streak counting logic used in calibrate."""
+    """Test the streak counting logic (informational) used in calibrate."""
 
     def test_agreement_increments_streak(self):
         human_codes = {"A", "C"}
@@ -169,11 +170,38 @@ class TestStreakLogic:
             streak += 1
         assert streak == 4
 
-    def test_streak_target_reached(self):
-        streak = 4
-        streak_target = 5
-        streak += 1
-        assert streak >= streak_target
+
+class TestErrorCapLogic:
+    """Test the error count / hard cap logic used in calibrate."""
+
+    def test_agreement_does_not_increment_error_count(self):
+        error_count = 2
+        human_codes = {"A", "C"}
+        llm_codes = {"A", "C"}
+        if human_codes != llm_codes:
+            error_count += 1
+        assert error_count == 2
+
+    def test_human_right_increments_error_count(self):
+        error_count = 2
+        human_codes = {"A", "C"}
+        llm_codes = {"A"}
+        # judgment = "h"
+        if human_codes != llm_codes:
+            error_count += 1
+        assert error_count == 3
+
+    def test_llm_right_does_not_increment_error_count(self):
+        error_count = 2
+        # judgment = "l" -> LLM was correct, no contrastive example
+        # error_count stays the same
+        assert error_count == 2
+
+    def test_hard_cap_reached(self):
+        error_count = 19
+        max_examples = 20
+        error_count += 1
+        assert error_count >= max_examples
 
 
 # ---------------------------------------------------------------------------
@@ -182,13 +210,19 @@ class TestStreakLogic:
 
 
 class TestGoldExamples:
-    def test_gold_row_to_csv_and_back(self, tmp_path):
-        """Gold rows saved to CSV should be loadable by format_mapping_examples."""
+    def test_contrastive_gold_row_to_csv_and_back(self, tmp_path):
+        """Contrastive gold rows saved to CSV should format correctly."""
         output = tmp_path / "examples.csv"
         gold_rows = [
-            {"response": "Too expensive", "code_1": "A", "explanation": "Cost issue"},
+            {
+                "response": "Too expensive",
+                "llm_code_1": "B",
+                "code_1": "A",
+                "explanation": "Cost issue",
+            },
             {
                 "response": "Unsafe at night",
+                "llm_code_1": "A",
                 "code_1": "B",
                 "code_2": "C",
                 "explanation": "Safety and quality",
@@ -197,13 +231,30 @@ class TestGoldExamples:
         df = pd.DataFrame(gold_rows)
         df.to_csv(output, index=False)
 
-        # Reload and format — should work with format_mapping_examples
         loaded = pd.read_csv(output)
         result = format_mapping_examples(loaded)
         assert "Too expensive" in result
         assert "Unsafe at night" in result
-        assert "Cost issue" in result
-        assert "Safety and quality" in result
+        assert "Incorrect topics: B" in result
+        assert "Correct topics: A" in result
+        # Explanation should NOT appear in prompt
+        assert "Cost issue" not in result
+        assert "Safety and quality" not in result
+
+    def test_legacy_positive_only_format(self):
+        """Old CSV without llm_code_* columns should still format correctly."""
+        rows = [
+            {"response": "Too expensive", "code_1": "A", "explanation": "Cost issue"},
+        ]
+        df = pd.DataFrame(rows)
+        result = format_mapping_examples(df)
+        assert "Assigned topics: A" in result
+        assert "Too expensive" in result
+        # No contrastive fields
+        assert "Incorrect" not in result
+        assert "Correct" not in result
+        # Explanation excluded from prompt
+        assert "Cost issue" not in result
 
     def test_append_preserves_existing(self, tmp_path):
         """Appending new rows should preserve existing data."""
@@ -211,6 +262,7 @@ class TestGoldExamples:
         existing = pd.DataFrame(
             {
                 "response": ["Old example"],
+                "llm_code_1": ["C"],
                 "code_1": ["B"],
                 "explanation": ["Previous"],
             }
@@ -218,7 +270,14 @@ class TestGoldExamples:
         existing.to_csv(output, index=False)
 
         new_rows = pd.DataFrame(
-            [{"response": "New example", "code_1": "A", "explanation": "New issue"}]
+            [
+                {
+                    "response": "New example",
+                    "llm_code_1": "A",
+                    "code_1": "B",
+                    "explanation": "",
+                }
+            ]
         )
         combined = pd.concat([existing, new_rows], ignore_index=True)
         combined.to_csv(output, index=False)
@@ -228,44 +287,39 @@ class TestGoldExamples:
         assert saved.iloc[0]["response"] == "Old example"
         assert saved.iloc[1]["response"] == "New example"
 
-    def test_accumulating_examples_appear_in_prompt(self):
-        """As gold examples accumulate, they should appear in formatted output."""
+    def test_accumulating_contrastive_examples_appear_in_prompt(self):
+        """As contrastive examples accumulate, they should appear in formatted output."""
         rows = []
         for i in range(3):
             rows.append(
                 {
                     "response": f"Response {i}",
+                    "llm_code_1": "B",
                     "code_1": "A",
-                    "explanation": f"Reason {i}",
+                    "explanation": "",
                 }
             )
             df = pd.DataFrame(rows)
             result = format_mapping_examples(df)
             assert f"Example {i + 1}" in result
             assert f"Response {i}" in result
+            assert "Incorrect topics:" in result
+            assert "Correct topics:" in result
 
-    def test_blank_explanation_omitted_from_prompt(self):
-        """Gold rows with blank explanation should not include Explanation line."""
+    def test_explanation_never_in_prompt(self):
+        """Explanation column should never appear in prompt output."""
         rows = [
-            {"response": "Agreed example", "code_1": "A", "explanation": ""},
             {
                 "response": "Corrected example",
+                "llm_code_1": "A",
                 "code_1": "B",
                 "explanation": "LLM missed this",
             },
         ]
         df = pd.DataFrame(rows)
         result = format_mapping_examples(df)
-        # First example has blank explanation — no Explanation line
-        lines = result.split("\n")
-        # Find the block for Example 1
-        ex1_start = next(i for i, line in enumerate(lines) if "Example 1:" in line)
-        ex2_start = next(i for i, line in enumerate(lines) if "Example 2:" in line)
-        ex1_block = "\n".join(lines[ex1_start:ex2_start])
-        assert "Explanation:" not in ex1_block
-        # Second example has an explanation
-        ex2_block = "\n".join(lines[ex2_start:])
-        assert "Explanation: LLM missed this" in ex2_block
+        assert "Explanation" not in result
+        assert "LLM missed this" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -282,13 +336,17 @@ class TestNeitherJudgment:
             streak = 0
         assert streak == 0
 
-    def test_neither_saves_custom_codes(self):
-        """Gold row from 'neither' uses the provided codes, not human or LLM."""
+    def test_neither_saves_contrastive_example(self):
+        """Gold row from 'neither' includes LLM codes and provided correct codes."""
+        llm_codes = ["A"]
         correct_codes = ["B", "C"]
         gold_row: dict = {"response": "Some response"}
+        for i, code in enumerate(sorted(llm_codes), 1):
+            gold_row[f"llm_code_{i}"] = code
         for i, code in enumerate(sorted(correct_codes), 1):
             gold_row[f"code_{i}"] = code
         gold_row["explanation"] = "Both were wrong"
+        assert gold_row["llm_code_1"] == "A"
         assert gold_row["code_1"] == "B"
         assert gold_row["code_2"] == "C"
         assert gold_row["explanation"] == "Both were wrong"

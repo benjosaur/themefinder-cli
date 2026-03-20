@@ -8,8 +8,17 @@ import pandas as pd
 def format_mapping_examples(examples_df: pd.DataFrame | None) -> str:
     """Format a mapping-examples DataFrame into a prompt string.
 
-    Expected columns: ``response``, one or more ``code_*`` columns, and
-    optionally ``explanation``.
+    Supports two schemas:
+
+    **Contrastive** (preferred): columns ``response``, ``llm_code_*`` (what the
+    LLM predicted incorrectly) and ``code_*`` (the correct labels).  Rendered as
+    ``Incorrect topics`` / ``Correct topics`` pairs.
+
+    **Legacy positive-only**: columns ``response`` and ``code_*`` only (no
+    ``llm_code_*``).  Rendered as ``Assigned topics``.
+
+    The ``explanation`` column is intentionally excluded from the prompt — it
+    exists in the CSV for human reference only.
 
     Returns ``""`` when *examples_df* is ``None`` or empty.
     """
@@ -17,8 +26,13 @@ def format_mapping_examples(examples_df: pd.DataFrame | None) -> str:
         return ""
 
     code_cols = sorted(c for c in examples_df.columns if c.startswith("code_"))
+    llm_code_cols = sorted(
+        c for c in examples_df.columns if c.startswith("llm_code_")
+    )
     if not code_cols:
         return ""
+
+    contrastive = len(llm_code_cols) > 0
 
     lines: list[str] = []
 
@@ -29,13 +43,20 @@ def format_mapping_examples(examples_df: pd.DataFrame | None) -> str:
             if pd.notna(row[c]) and str(row[c]).strip()
         ]
         response = str(row.get("response", ""))
-        explanation = row.get("explanation", None)
 
         lines.append("")
         lines.append(f"Example {idx}:")
         lines.append(f'Response: "{response}"')
-        lines.append(f"Assigned topics: {', '.join(codes)}")
-        if pd.notna(explanation) and str(explanation).strip():
-            lines.append(f"Explanation: {explanation}")
+
+        if contrastive:
+            llm_codes = [
+                str(row[c]).strip()
+                for c in llm_code_cols
+                if pd.notna(row[c]) and str(row[c]).strip()
+            ]
+            lines.append(f"Incorrect topics: {', '.join(llm_codes)}")
+            lines.append(f"Correct topics: {', '.join(codes)}")
+        else:
+            lines.append(f"Assigned topics: {', '.join(codes)}")
 
     return "\n".join(lines)

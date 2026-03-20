@@ -9,7 +9,8 @@ from themefinder.examples import format_mapping_examples
 
 
 class TestFormatMappingExamples:
-    def test_basic(self):
+    def test_basic_legacy_positive_only(self):
+        """Legacy format (no llm_code_*) uses 'Assigned topics' and omits explanation."""
         df = pd.DataFrame(
             {
                 "response": [
@@ -30,8 +31,24 @@ class TestFormatMappingExamples:
         assert 'Response: "I think this will hurt small businesses"' in result
         assert "Assigned topics: A, C" in result
         assert "Assigned topics: B" in result
-        assert "Explanation: Discusses economic impact" in result
-        assert "Explanation: Expresses general support" in result
+        # Explanations are excluded from prompt (human reference only)
+        assert "Explanation" not in result
+
+    def test_contrastive_format(self):
+        """When llm_code_* columns are present, use contrastive format."""
+        df = pd.DataFrame(
+            {
+                "response": ["Too expensive and unsafe"],
+                "llm_code_1": ["A"],
+                "code_1": ["B"],
+                "code_2": ["C"],
+                "explanation": ["LLM missed safety"],
+            }
+        )
+        result = format_mapping_examples(df)
+        assert "Incorrect topics: A" in result
+        assert "Correct topics: B, C" in result
+        assert "Explanation" not in result
 
     def test_empty_returns_empty_string(self):
         assert format_mapping_examples(None) == ""
