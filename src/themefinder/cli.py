@@ -140,6 +140,7 @@ def _compute_theme_frequencies(
     ref_labels: list[frozenset[str]],
     all_labels: list[str],
     n_responses: int,
+    label_map: dict[str, str] | None = None,
 ) -> tuple[list[dict], float, float]:
     """Per-theme frequency comparison and Kendall's tau rank correlation."""
     pred_counter = Counter(label for s in pred_labels for label in s)
@@ -152,13 +153,13 @@ def _compute_theme_frequencies(
         theme_freq.append(
             {
                 "label": label,
+                "theme_label": label_map.get(label, label) if label_map else label,
                 "pred_count": pc,
                 "pred_pct": round(pc / n_responses * 100, 1),
                 "ref_count": rc,
                 "ref_pct": round(rc / n_responses * 100, 1),
             }
         )
-    theme_freq.sort(key=lambda x: x["ref_count"], reverse=True)
 
     pred_freq_vec = [pred_counter.get(label, 0) for label in all_labels]
     ref_freq_vec = [ref_counter.get(label, 0) for label in all_labels]
@@ -344,17 +345,27 @@ def classify(
 
 @app.command()
 def evaluate(
-    predicted_csv: Path = typer.Argument(..., help="Path to predicted (coded) CSV"),
     reference_csv: Path = typer.Argument(
         ..., help="Path to reference (ground truth) CSV"
     ),
+    predicted_csv: Path = typer.Argument(..., help="Path to predicted (coded) CSV"),
     output: Optional[Path] = typer.Option(
         None, "--output", "-o", help="Optional JSON output path"
+    ),
+    themes: Optional[Path] = typer.Option(
+        None, "--themes", "-t", help="Path to themes CSV for label lookup"
     ),
 ):
     """Evaluate coded responses against a reference set (F1, precision, recall, exact match, overlap)."""
     pred = read_coded_csv(predicted_csv)
     ref = read_coded_csv(reference_csv)
+
+    label_map: dict[str, str] | None = None
+    if themes:
+        themes_df = pd.read_csv(themes)
+        label_map = dict(
+            zip(themes_df["topic_id"].astype(str), themes_df["topic_label"])
+        )
 
     merged = pred.merge(ref, on="response_id", suffixes=("_pred", "_ref"))
     if merged.empty:
@@ -409,7 +420,7 @@ def evaluate(
     f1_ci, prec_ci, rec_ci = ci(boot_f1), ci(boot_prec), ci(boot_rec)
 
     theme_freq, tau, tau_p = _compute_theme_frequencies(
-        pred_labels, ref_labels, all_labels, len(merged)
+        pred_labels, ref_labels, all_labels, len(merged), label_map
     )
 
     metrics = {
@@ -445,21 +456,49 @@ def evaluate(
     n_pred = len(pred)
     n_ref = len(ref)
 
-    freq_table = Table(title="Theme Frequencies")
-    freq_table.add_column("Theme", style="bold")
-    freq_table.add_column(f"{ref_name}\nCount (n={n_ref})", justify="right")
-    freq_table.add_column(f"{ref_name}\n%", justify="right")
-    freq_table.add_column(f"{pred_name}\nCount (n={n_pred})", justify="right")
-    freq_table.add_column(f"{pred_name}\n%", justify="right")
-    for tf in theme_freq:
-        freq_table.add_row(
-            tf["label"],
+    # Build rank maps for green highlighting
+    by_ref = sorted(theme_freq, key=lambda x: x["ref_count"], reverse=True)
+    by_pred = sorted(theme_freq, key=lambda x: x["pred_count"], reverse=True)
+    ref_rank = {tf["label"]: i for i, tf in enumerate(by_ref)}
+    pred_rank = {tf["label"]: i for i, tf in enumerate(by_pred)}
+
+    # Table 1: sorted by reference (ground truth) count
+    ref_table = Table(title=f"Theme Frequencies (by {ref_name})")
+    ref_table.add_column("Theme", style="bold")
+    ref_table.add_column(f"{ref_name}\nCount (n={n_ref})", justify="right")
+    ref_table.add_column(f"{ref_name}\n%", justify="right")
+    ref_table.add_column(f"{pred_name}\nCount (n={n_pred})", justify="right")
+    ref_table.add_column(f"{pred_name}\n%", justify="right")
+    for tf in by_ref:
+        row_style = "green" if ref_rank[tf["label"]] == pred_rank[tf["label"]] else None
+        ref_table.add_row(
+            tf["theme_label"],
             str(tf["ref_count"]),
             f"{tf['ref_pct']:.1f}",
             str(tf["pred_count"]),
             f"{tf['pred_pct']:.1f}",
+            style=row_style,
         )
-    console.print(freq_table)
+    console.print(ref_table)
+
+    # Table 2: sorted by predicted count
+    pred_table = Table(title=f"Theme Frequencies (by {pred_name})")
+    pred_table.add_column("Theme", style="bold")
+    pred_table.add_column(f"{pred_name}\nCount (n={n_pred})", justify="right")
+    pred_table.add_column(f"{pred_name}\n%", justify="right")
+    pred_table.add_column(f"{ref_name}\nCount (n={n_ref})", justify="right")
+    pred_table.add_column(f"{ref_name}\n%", justify="right")
+    for tf in by_pred:
+        row_style = "green" if ref_rank[tf["label"]] == pred_rank[tf["label"]] else None
+        pred_table.add_row(
+            tf["theme_label"],
+            str(tf["pred_count"]),
+            f"{tf['pred_pct']:.1f}",
+            str(tf["ref_count"]),
+            f"{tf['ref_pct']:.1f}",
+            style=row_style,
+        )
+    console.print(pred_table)
 
     if output:
         output.write_text(json.dumps(metrics, indent=2))
