@@ -248,7 +248,11 @@ class TestGoldExamples:
         """Gold rows with blank explanation should not include Explanation line."""
         rows = [
             {"response": "Agreed example", "code_1": "A", "explanation": ""},
-            {"response": "Corrected example", "code_1": "B", "explanation": "LLM missed this"},
+            {
+                "response": "Corrected example",
+                "code_1": "B",
+                "explanation": "LLM missed this",
+            },
         ]
         df = pd.DataFrame(rows)
         result = format_mapping_examples(df)
