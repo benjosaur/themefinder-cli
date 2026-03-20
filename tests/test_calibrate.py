@@ -241,20 +241,14 @@ class TestGoldExamples:
         assert "Cost issue" not in result
         assert "Safety and quality" not in result
 
-    def test_legacy_positive_only_format(self):
-        """Old CSV without llm_code_* columns should still format correctly."""
+    def test_missing_llm_codes_returns_empty(self):
+        """CSV without llm_code_* columns returns empty string."""
         rows = [
             {"response": "Too expensive", "code_1": "A", "explanation": "Cost issue"},
         ]
         df = pd.DataFrame(rows)
         result = format_mapping_examples(df)
-        assert "Assigned topics: A" in result
-        assert "Too expensive" in result
-        # No contrastive fields
-        assert "Incorrect" not in result
-        assert "Correct" not in result
-        # Explanation excluded from prompt
-        assert "Cost issue" not in result
+        assert result == ""
 
     def test_append_preserves_existing(self, tmp_path):
         """Appending new rows should preserve existing data."""
