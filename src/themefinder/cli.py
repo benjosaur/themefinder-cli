@@ -447,17 +447,17 @@ def evaluate(
 
     freq_table = Table(title="Theme Frequencies")
     freq_table.add_column("Theme", style="bold")
-    freq_table.add_column(f"{pred_name}\nCount (n={n_pred})", justify="right")
-    freq_table.add_column(f"{pred_name}\n%", justify="right")
     freq_table.add_column(f"{ref_name}\nCount (n={n_ref})", justify="right")
     freq_table.add_column(f"{ref_name}\n%", justify="right")
+    freq_table.add_column(f"{pred_name}\nCount (n={n_pred})", justify="right")
+    freq_table.add_column(f"{pred_name}\n%", justify="right")
     for tf in theme_freq:
         freq_table.add_row(
             tf["label"],
-            str(tf["pred_count"]),
-            f"{tf['pred_pct']:.1f}",
             str(tf["ref_count"]),
             f"{tf['ref_pct']:.1f}",
+            str(tf["pred_count"]),
+            f"{tf['pred_pct']:.1f}",
         )
     console.print(freq_table)
 
