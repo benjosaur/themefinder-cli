@@ -396,6 +396,7 @@ def evaluate(
     n_instances = y_ref.shape[0]
     rng = np.random.default_rng(seed=42)
     boot_f1, boot_prec, boot_rec = [], [], []
+    boot_exact, boot_overlap, boot_tau = [], [], []
     for _ in range(n_bootstrap):
         idx = rng.choice(n_instances, size=n_instances, replace=True)
         boot_f1.append(
@@ -407,6 +408,22 @@ def evaluate(
         boot_rec.append(
             recall_score(y_ref[idx], y_pred[idx], average="samples", zero_division=0)
         )
+        sampled_pred = [pred_labels[i] for i in idx]
+        sampled_ref = [ref_labels[i] for i in idx]
+        boot_exact.append(
+            sum(1 for p, r in zip(sampled_pred, sampled_ref) if p == r) / len(idx)
+        )
+        boot_overlap.append(
+            sum(1 for p, r in zip(sampled_pred, sampled_ref) if p & r) / len(idx)
+        )
+        if len(all_labels) >= 2:
+            pred_ctr = Counter(lbl for s in sampled_pred for lbl in s)
+            ref_ctr = Counter(lbl for s in sampled_ref for lbl in s)
+            pv = [pred_ctr.get(lbl, 0) for lbl in all_labels]
+            rv = [ref_ctr.get(lbl, 0) for lbl in all_labels]
+            t, _ = kendalltau(pv, rv)
+            if not np.isnan(t):
+                boot_tau.append(t)
 
     def ci(samples):
         lo, hi = np.percentile(samples, [2.5, 97.5])
@@ -418,6 +435,8 @@ def evaluate(
     overlap = sum(1 for p, r in zip(pred_labels, ref_labels) if p & r) / len(merged)
 
     f1_ci, prec_ci, rec_ci = ci(boot_f1), ci(boot_prec), ci(boot_rec)
+    exact_ci, overlap_ci = ci(boot_exact), ci(boot_overlap)
+    tau_ci = ci(boot_tau) if boot_tau else None
 
     theme_freq, tau, tau_p = _compute_theme_frequencies(
         pred_labels, ref_labels, all_labels, len(merged), label_map
@@ -433,8 +452,11 @@ def evaluate(
         "recall": round(rec, 4),
         "recall_ci": rec_ci,
         "exact_match": round(exact_match, 4),
+        "exact_match_ci": exact_ci,
         "overlap_rate": round(overlap, 4),
+        "overlap_rate_ci": overlap_ci,
         "kendall_tau": round(tau, 4) if not np.isnan(tau) else None,
+        "kendall_tau_ci": tau_ci,
         "kendall_tau_pvalue": round(tau_p, 4) if not np.isnan(tau_p) else None,
         "theme_frequencies": theme_freq,
     }
