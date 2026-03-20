@@ -440,12 +440,17 @@ def evaluate(
             table.add_row(k, str(v))
     console.print(table)
 
+    pred_name = predicted_csv.stem
+    ref_name = reference_csv.stem
+    n_pred = len(pred)
+    n_ref = len(ref)
+
     freq_table = Table(title="Theme Frequencies")
     freq_table.add_column("Theme", style="bold")
-    freq_table.add_column("Pred Count", justify="right")
-    freq_table.add_column("Pred %", justify="right")
-    freq_table.add_column("Ref Count", justify="right")
-    freq_table.add_column("Ref %", justify="right")
+    freq_table.add_column(f"{pred_name}\nCount (n={n_pred})", justify="right")
+    freq_table.add_column(f"{pred_name}\n%", justify="right")
+    freq_table.add_column(f"{ref_name}\nCount (n={n_ref})", justify="right")
+    freq_table.add_column(f"{ref_name}\n%", justify="right")
     for tf in theme_freq:
         freq_table.add_row(
             tf["label"],
